@@ -1,0 +1,133 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{amsmath}
+\usepackage{hyperref}
+
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+
+\title{\textbf{Project Proposal: AI Racing Challenge} \\ \large Human vs. AI Racing at the Limits of Handling: Pure Pursuit, MPCC, and Reinforcement Learning}
+\author{Team Proposal}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Project Overview}
+This project aims to develop a simulated 2D autonomous racing environment to benchmark three generations of vehicle control architectures operating at physical handling limits. Operating within a high-frequency simulation loop allows the team to exploit perfect state information to evaluate vehicle dynamics at the threshold of friction saturation.
+
+The simulation will pit three paradigms against each other:
+\begin{enumerate}[noitemsep]
+    \item \textbf{Geometric Control (Pure Pursuit):} A classical tracking baseline using a curvature-based velocity profile as a reference point for non-optimization control.
+    \item \textbf{Model Predictive Contouring Control (MPCC):} An optimal control loop (Liniger et al., 2015) that maximizes track progress along a contouring horizon while adhering to non-linear dynamic constraints.
+    \item \textbf{Reinforcement Learning (Proximal Policy Optimization):} A model-free data-driven agent that learns competitive racing lines and input trajectories through continuous training.
+\end{enumerate}
+Performance will be evaluated primarily on lap time, supported by telemetry analysis of racing line choices, input smoothness, and track generalization.
+
+\section{Detailed Simulation Framework \& Plant Dynamics}
+The project will be implemented in Python using Pygame for rendering and custom numerical integrations for physics updates.
+
+\subsection*{Dynamic Bicycle Model with Pacejka Non-Linear Tires}
+To capture realistic vehicle handling near grip boundaries, we implement a 2-DOF Dynamic Bicycle Model with non-linear Pacejka tire dynamics. The full state vector is defined as:
+\[ x_k = [x, y, \psi, v_x, v_y, r]^T \]
+where $(x, y)$ are global coordinates, $\psi$ is heading angle, $v_x$ is longitudinal velocity, $v_y$ is lateral velocity, and $r$ is yaw rate ($\dot{\psi}$). Controls are acceleration/braking $a_x$ and front steering angle $\delta$.
+
+\textbf{Tire Saturation Model:} Front and rear slip angles ($\alpha_f, \alpha_r$) are calculated as:
+\[ \alpha_f = \delta - \arctan\left(\frac{v_y + l_f r}{v_x}\right), \quad \alpha_r = -\arctan\left(\frac{v_y - l_r r}{v_x}\right) \]
+To model tire force saturation during aggressive cornering, lateral forces ($F_{yf}, F_{yr}$) are computed using Pacejka's Magic Formula:
+\[ F_{y} = D \sin\left(C \arctan\left(B \alpha - E (B \alpha - \arctan(B \alpha))\right)\right) \]
+where $B, C, D, E$ represent empirical shape, stiffness, peak, and curvature factors.
+
+\textbf{Low-Speed Kinematic Switching:} To prevent numerical division-by-zero singularities when $v_x \approx 0$, the update equations switch to a kinematic bicycle model at low speeds ($v_x < v_{\text{min}}$):
+\[ \dot{x} = v_x \cos\psi, \quad \dot{y} = v_x \sin\psi, \quad \dot{\psi} = \frac{v_x}{L} \tan\delta \]
+Above $v_{\text{min}}$, full dynamic updates govern motion:
+\begin{align*}
+v_{x, k+1} &= v_{x, k} + (a_x + v_y r) \Delta t \\
+v_{y, k+1} &= v_{y, k} + \left( \frac{F_{yf}\cos\delta + F_{yr}}{m} - v_x r \right) \Delta t \\
+r_{k+1} &= r_k + \left( \frac{l_f F_{yf}\cos\delta - l_r F_{yr}}{I_z} \right) \Delta t
+\end{align*}
+
+\section{Controller Architectures}
+
+\subsection*{1. Baseline: Pure Pursuit with Curvature-Based Velocity Profile}
+Pure Pursuit serves as our baseline reference. It calculates steering commands relative to a look-ahead point distance $L_t$:
+\[ \delta = \arctan\left(\frac{2L \cdot x_{\text{local}}}{L_t^2}\right) \]
+To remain functional on a race track, it is paired with a pre-computed curvature velocity profile $v_{\text{ref}}(s) = \sqrt{\mu g / \kappa(s)}$, where $\kappa(s)$ is local path curvature and $\mu$ is friction coefficient.
+
+\subsection*{2. Optimal Control: Model Predictive Contouring Control (MPCC)}
+Following Liniger et al. (2015), the MPC optimization shifts from trajectory-tracking to Model Predictive Contouring Control (MPCC). Rather than minimizing lateral error relative to a fixed time-indexed trajectory, MPCC maximizes progress along the track centerline arc-length $s$ while penalizing deviation within track boundaries.
+
+The objective function $J$ over dynamic prediction horizon $N$ is:
+\[ J = \sum_{t=0}^{N} \left( -w_s \Delta s(t) + w_l e_l(t)^2 + w_c e_c(t)^2 + w_u \|\Delta u(t)\|^2_2 \right) \]
+where $\Delta s(t)$ is forward progress along the track, $e_l(t)$ and $e_c(t)$ are lag and contouring errors relative to the reference path, and $\Delta u(t) = [\Delta\delta, \Delta a_x]^T$ penalizes abrupt actuator shifts.
+
+\textbf{Track Boundary Constraints:} Hard constraints enforce track boundaries rather than soft cost penalties:
+\[ |e_{ct}(t)| \le \frac{w}{2} - \frac{d_{\text{car}}}{2}, \quad \forall t \in [0, N] \]
+where $w$ is track width and $d_{\text{car}}$ is vehicle width. Actuator constraints enforce mechanical limits ($|\delta| \le \delta_{\text{max}}, |a_x| \le a_{\text{max}}$). The optimization problem is solved using \textbf{CasADi} with the \textbf{IPOPT} solver.
+
+\subsection*{3. Learning-Based Control: Proximal Policy Optimization (PPO)}
+% 1. Setup (1 sentence)
+-- The policy (actor) : a small neural network . observation goes in =; out comes a 
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Observation:} % what it sees + why
+    the 
+    \item \textbf{Action:} % what it outputs + why
+
+    \item \textbf{Reward and termination:} % reward, why progress, when episodes end
+
+    \item \textbf{Training:} % curriculum, seeds
+\end{itemize}
+
+\section{Performance Evaluation Matrix}
+Lap time is established as the primary benchmark. Cross-track error and actuator metrics serve to analyze line strategy and controller execution.
+
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{lp{10cm}}
+\toprule
+\textbf{Metric} & \textbf{What We Plan to Measure} \\ \midrule
+Lap Time (Primary) & Absolute time required to complete full laps at racing speeds. \\ \addlinespace
+Line Selection Characteristics & Profile of cross-track error ($e_{ct}$) to analyze geometric racing lines. \\ \addlinespace
+Actuator Smoothness & RMS rate of change ($\Delta\delta, \Delta a_x$) to quantify input chatter. \\ \addlinespace
+Track Completion Rate & Percentage of successful laps completed without boundary collisions. \\ \addlinespace
+Zero-Velocity Stability & System stability transitioning out of full stops ($v_x = 0$) using kinematic switching. \\ \bottomrule
+\end{tabular}
+\caption{Racing Evaluation Metrics}
+\end{table}
+
+\section{Team Responsibilities}
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{llp{7.5cm}}
+\toprule
+\textbf{Member} & \textbf{Main Responsibility} & \textbf{Tasks} \\ \midrule
+Member 1 & Environment \& Dynamics & Implement Milliken dynamics, Pacejka tire formulas, kinematic switching for low speeds, and track maps. \\ \addlinespace
+Member 2 & Optimal Control (MPCC) & Formulate the MPCC optimization problem in CasADi/IPOPT, code progress parameters, and set track limits. \\ \addlinespace
+Member 3 & Reinforcement Learning & Build Gymnasium wrapper, engineer progress-focused reward structures, and train PPO agents. \\ \addlinespace
+Member 4 & Integration \& Analytics & Implement Pure Pursuit baseline, integrate controller profiles, collect telemetry data, and create comparative plots. \\ \bottomrule
+\end{tabular}
+\caption{Team Task Allocations}
+\end{table}
+
+\section{Expected Project Timeline}
+\begin{description}[leftmargin=3.5cm, style=nextline]
+    \item[November 5] Finalize team assignments and outline architectural changes.
+    \item[November 12] Present MPCC scope, Pacejka tire dynamics, and project plan to the professor.
+    \item[November 19] Complete 2D simulation loop, kinematic switching, and initial track boundary implementations.
+    \item[Nov 20--26] Complete Pure Pursuit baseline. Formulate CasADi MPCC optimization script and set up parallel PPO training.
+    \item[Nov 27--Dec 3] Tune MPCC constraints and PPO progress reward weights. Verify tire saturation handling.
+    \item[December 4--9] Merge controllers into comparative multi-car racing modes and log telemetry datasets.
+    \item[December 10] Present racing simulation results and comparative lap time analyses.
+    \item[December 11--17] Finalize analysis and submit the final project proposal report.
+\end{description}
+
+\end{document}

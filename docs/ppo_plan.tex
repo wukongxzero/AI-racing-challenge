@@ -1,0 +1,265 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\titleformat{\section}{\large\bfseries}{\thesection}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+% Question prompt: answer it right after, then delete the \q{...}.
+\newcommand{\q}[1]{\textcolor{blue}{\textit{Q: #1}}}
+
+\title{\textbf{AI Racing Project}\\ \large PPO Implementation and Testing Plan\\ \normalsize PPO Workstream -- Team Discussion Draft}
+\author{Pavan Kushal Velagaleti}
+\date{November 2026}
+
+\begin{document}
+\maketitle
+
+%=====================================================================
+%=====================================================================
+\section{Goal and Scope}
+\noindent\textbf{Problem.}
+Compare three controllers---Pure Pursuit (geometric path-tracking controller), MPCC/MPC (optimal control), and PPO (reinforcement learning)---on the same simulated car and track, so any performance difference comes from the controller alone. It doubles as a game where a human races them. Phase 1 focuses on single-car timed laps on an empty track.
+
+\vspace{0.5em}
+\noindent\textbf{Why racing is hard.}
+Racing is hard because you are trying to drive right at the physical limit of tire grip, where three competing demands collide:
+\begin{enumerate}[leftmargin=1.5em, itemsep=0.25em]
+    \item \textbf{Speed vs.\ cornering (the traction limit):} Tires only have a finite amount of grip to share between accelerating/braking and turning (the ``friction circle''). Carrying too much speed into a turn saturates the tires and causes sliding---either understeer (plowing off the outside of the track) or oversteer (spinning out).
+    \item \textbf{Delayed consequences (lookahead and braking):} A fast car cannot stop or turn instantaneously due to momentum and actuator limits. The controller must start braking well before the corner begins, hit the apex at the right angle, and unwind the steering as it accelerates out.
+    \item \textbf{Speed vs.\ safety tradeoff:} Pushing closer to the track boundary yields faster lap times but leaves almost zero margin for error; a tiny miscalculation sends the car off-track.
+\end{enumerate}
+
+\noindent\textbf{Goal.}
+\begin{itemize}[leftmargin=1.5em, itemsep=0.25em]
+    \item \textbf{The task:} Drive and complete full laps around a closed 1:10-scale track in the shortest time possible without leaving the track boundaries.
+    \item \textbf{Under what rules (constraints):} The exact same car dynamics, $20~\text{Hz}$ control rate ($50~\text{ms}$ per step), actuator limits (throttle/braking in $[-1, 1]$, target steering angle up to $0.42~\text{rad}$, steering rate up to $3.2~\text{rad/s}$), and track boundaries as every other controller and human player.
+    \item \textbf{Without what:} Unlike MPCC, PPO receives no mathematical equations for the car's physics, no tire friction parameters, and no online trajectory optimization at test time. It learns purely from trial-and-error interaction, rewards, and sensor/track observations.
+    \item \textbf{Measured how:} Mean and best lap time (in seconds), clean lap completion rate without going off-track (percentage), and control smoothness (no erratic steering or throttle jitter).
+    \item \textbf{Core question:} Can a model-free PPO agent learn to drive fast and cleanly on the simulated 1:10 car purely through interaction, beating Pure Pursuit and approaching or matching MPC/MPCC lap times?
+\end{itemize}
+
+\noindent\textbf{Minimum success.} A trained PPO policy that reliably completes full clean laps on the main track faster than Pure Pursuit while obeying all shared actuator limits.
+
+\noindent\textbf{Better result.} Getting close to MPCC lap times on the main track, generalizing zero-shot to the unseen second track, still finishing laps when tire friction drops (slippery track), and running ablations (testing different lookahead horizons and removing the smoothness penalty).
+
+\noindent\textbf{Out of scope.} Building the stand-in NumPy car, MuJoCo physics model, and track module (Cristhian); implementing MPCC (Berinay); implementing Pure Pursuit, the Pygame game loop, and evaluation plots (Nathaly); and Phase 2 multi-agent collision avoidance/overtaking---Phase 2 human-vs.-AI races simply deploy the trained Phase 1 policy as an opponent.
+
+%=====================================================================
+\section{Tools}
+\begin{center}
+\begin{tabular}{l l p{0.48\textwidth}}
+\toprule
+Purpose & Tool & Why we use it (project-specific reason)\\
+\midrule
+Algorithm & Stable-Baselines3 (SB3) & Gives us a reliable, tested implementation of PPO out of the box so we do not waste time debugging RL math (like GAE and gradient clipping) on a tight deadline.\\
+Env interface & Gymnasium & Standard \texttt{reset()}/\texttt{step()} interface lets us train on \texttt{car="numpy"} now and swap cleanly to \texttt{car="mujoco"} later.\\
+Deep learning & PyTorch & Native backend for SB3; makes it straightforward to save and load the trained policy weights directly inside Nathaly's Pygame race loop.\\
+Simulator & NumPy \& MuJoCo & Fast 1:10 F1TENTH dynamics in NumPy let us start training and tuning immediately, then move to MuJoCo for realistic tire slip and contact physics.\\
+Monitoring & TensorBoard & Tracks reward curves, episode length, progress, and policy entropy in real time so we can spot stalling or off-track failures early.\\
+Parallelism \& norm & \texttt{SubprocVecEnv} + \texttt{VecNormalize} & Runs multiple track simulations across CPU cores to speed up training and automatically normalizes mixed-scale inputs (speed, angles, curvature) for stable neural network training.\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textbf{Goal.}
+
+\begin{itemize}[leftmargin=1.5em, itemsep=0.25em]
+    \item \textbf{The task:} The car must Drive and complete full laps around closed 1:10 scale track in the shortest time possible without leaving the track boundaries. 
+    \item \textbf{Under what rules:} (The constraints) : The exact same car dynamics , 20 Hz control rate (50 ms per step), actuator limits(Throttle/braking in [-1,1] , target steeriung angle up to 0.42 rad, steering rate upto 3.2 rad/s) and track boundaraies as every other controller and human player.  
+    \item \textbf{Without what:} Unlike MPCC , PPO gets no mathematical equations for the car's physics , no tire friction parameters and no online trajectory optimize at test time . it learns purely from trial and error. rewards and sensor/track observations. 
+    
+    \item \textbf{Measured how:} Mean and best lap time (in seconds), lap completion rate without going off track (percentage) and control Smoothness(no erratic steering or throttle jitter).
+    
+    \item \textbf{Core question:} Can a model free PPO agent learn how to drive fast and cleanly on the simulated 1:10 car purely through interaction , beating pure pursuit and MPC/MPCC's lap times? 
+    
+\end{itemize}
+
+\noindent\textbf{Minimum success.} A trained PPO policy that reliably completes full clean laps on the main tracking track faster than pure pursuit while obeying all shared actuator limits? 
+
+\noindent\textbf{Better result.} Getting close to MPCC lap times on the main track ,generalizing zero shot to the unsen second track , still finishing laps when tire friction drops (slippery track) and running ablations (like testing diffeerent look ahead distance or removing smoothness penalty)
+
+\noindent\textbf{Out of scope.}Building the stand-in NumPy car, MuJoCo physics model, and track module (Christian); implementing MPCC (Berinay); implementing Pure Pursuit, the Pygame game loop, and evaluation plots (Nathaly); and Phase 2 multi-agent collision avoidance/overtaking—Phase 2 human-vs.-AI races simply deploy the trained Phase 1 policy as an opponent.
+
+%=====================================================================
+\section{Tools}
+\begin{center}
+\begin{tabular}{l l p{0.5\textwidth}}
+\toprule
+Purpose & Tool & Why we use it (project-specific reason)\\
+\midrule
+Algorithm & SB3- stable baselines  & Gives us reliable , tested implementation of PPO out of the box so we dont waste time debugging RL math(like GAE and gradient clipping) on a tight deadline.\\
+Env interface & Gymnasium & Use the standard rest()/step() interface which lets us train car ="numpy" now and swap to car = "mujoco" later \\
+Deep learning & Pytorch & Native backend for SB3; makes it straightforward to save and load the trained policy weights directly inside Natalys pygame race loop \\
+Simulator & Stand in Numpy car & Mujoco : fast 1:10 F1Tenth dynamics in Numpy lets us start training and turning immediately , then move to mujoco for realistic tire slip and contact physics \\
+Monitoring & TensorBoard & Tracks reward curves , episode length , progress and policy entropy in real time so we can spot stalling or off track failures early\\
+Parallel envs / normalization & SubprocVecEnv & VecNormalize: runs multiple track simulations across CPU cores to speed up training and automatically normalizes mixed scale inputs (speed, angles, curvature) so the neural network trains stably\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%=====================================================================
+\section{Dependency on the Environment}
+\begin{enumerate}[leftmargin=1.5em, itemsep=0.25em]
+    \item \textbf{What I need from the environment:} A 20~Hz Gymnasium wrapper (\texttt{RacingEnv}) running 2--5~ms physics sub-steps that accepts normalized actions $[\text{throttle}, \text{steering}] \in [-1, 1]$ through the shared actuator limiter ($\le 0.42~\text{rad}$ steering angle, $\le 3.2~\text{rad/s}$ steering rate) and exposes:
+    \begin{itemize}[leftmargin=1.5em, itemsep=0.15em]
+        \item \textbf{Car state:} Body-frame velocities $(v_x, v_y)$, yaw rate $r$, and the actual current steering angle (since rate-limiting can cause the wheels' real angle to lag behind the commanded action).
+        \item \textbf{Track query:} Centerline progress $s$, contouring error $e_c$, heading error $e_\psi$, and upcoming centerline curvatures and track directions ahead.
+        \item \textbf{Training vs.\ race off-track modes:} Immediate episode termination (\texttt{terminated=True}) when $|e_c| > (\text{half-width} - \text{half-car-width})$ during PPO training (versus reduced-grip grass slowdown during evaluation/races), plus separate \texttt{truncated=True} signaling for episode time limits.
+    \end{itemize}
+    \item \textbf{Blocked vs.\ not blocked:} 
+    \begin{itemize}[leftmargin=1.5em, itemsep=0.15em]
+        \item \textbf{Blocked:} Real PPO policy training, reward weight tuning, throughput benchmarking, and lap-time comparisons against Pure Pursuit and MPCC (all waiting on the shared stand-in NumPy car, \texttt{car="numpy"}).
+        \item \textbf{Not blocked:} Signing off on the agreed interface document, finalizing my RL problem formulation (observation vector, reward function, termination rules, and reset distribution), writing the observation/reward wrapper, and verifying the Stable-Baselines3 training loop.
+    \end{itemize}
+    \item \textbf{Working in the meantime:} Since the environment workstream is already delivering the shared stand-in NumPy car (\texttt{car="numpy"}) behind the exact \texttt{RacingEnv} API, I do not build a separate physics simulator. Instead, I use a lightweight mock \texttt{RacingEnv} returning dummy arrays of the agreed shapes (alongside standard \texttt{Pendulum-v1} sanity checks) to verify observation/action shapes, \texttt{VecNormalize}, checkpointing, and TensorBoard logging before \texttt{car="numpy"} arrives.
+    \item \textbf{Needed by:} 
+    \begin{itemize}[leftmargin=1.5em, itemsep=0.15em]
+        \item \textbf{Stand-in NumPy car (\texttt{car="numpy"}): November 22--23, 2026} — needed immediately upon interface sign-off so initial PPO training can start within the Nov 20--26 sprint.
+        \item \textbf{First MuJoCo version (\texttt{car="mujoco"}): November 27, 2026} — needed at the start of the Nov 27--Dec 3 tuning window so I have a full week to adapt reward weights and normalization to realistic MuJoCo tire contact and slip dynamics before the December 3 pre-report.
+    \end{itemize}
+\end{enumerate}
+
+%=====================================================================
+
+\section{RL Problem Formulation}
+\begin{enumerate}[leftmargin=1.5em, itemsep=0.35em]
+    \item \textbf{State vs.\ Observation ($x_n$ vs.\ $o_n$):} While the underlying simulator state $x_n$ tracks global coordinates $(X, Y, \psi)$, wheel spins, and track progress, PPO receives a 15-dimensional ego-centric observation vector $o_n \in \mathbb{R}^{15}$ that omits global $(X, Y, \psi, V_X, V_Y)$ so the policy cannot memorize map coordinates and instead generalizes across corners and unseen tracks:
+    \begin{itemize}[leftmargin=1.5em, itemsep=0.15em]
+        \item \textbf{Body-frame motion (3):} Forward speed $v_x$, lateral slip speed $v_y$, and yaw rate $r$.
+        \item \textbf{Actuator state (1):} Actual current steering angle $\delta_{\text{curr}}$ (necessary because steering is rate-limited at $3.2~\text{rad/s}$ and can lag behind commanded steering).
+        \item \textbf{Track-relative errors (2):} Signed lateral offset $e_c$ from the centerline and heading error $e_\psi \in [-\pi, \pi]$ relative to the road tangent.
+        \item \textbf{Previous action (2):} $[\text{throttle}_{n-1}, \text{steering}_{n-1}]$ to encourage smooth control transitions.
+        \item \textbf{Curvature lookahead (6):} Upcoming centerline curvatures $\kappa_1, \dots, \kappa_6$ sampled every $0.5~\text{m}$ from $0.5~\text{m}$ to $3.0~\text{m}$ ahead ($\approx 0.5~\text{s}$ preview at $5\text{--}6~\text{m/s}$).
+        \item \textbf{Local track half-width (1):} $w_{\text{half}}$ so the policy knows available road width when width varies between straights and hairpins.
+    \end{itemize}
+    All 15 inputs are standardized online using Stable-Baselines3's \texttt{VecNormalize} (running mean and variance) so velocities, angles, and curvatures sit on a comparable scale.
+
+    \item \textbf{Control / Action Space ($u_n$):} A 2D continuous command $u_n = [\text{throttle}_n, \text{steering}_n] \in [-1, 1]^2$ issued at $20~\text{Hz}$ and held over each $\Delta t = 50~\text{ms}$ control step. Inside \texttt{RacingEnv}, the shared limiter scales steering to $[-0.42, 0.42]~\text{rad}$ and enforces the $\le 3.2~\text{rad/s}$ steering slew rate.
+
+    \item \textbf{Transition Dynamics:} Treated as a model-free Markov transition $x_{n+1} \sim P(\cdot \mid x_n, u_n)$ stepped by \texttt{RacingEnv} over $2\text{--}5~\text{ms}$ physics sub-steps (\texttt{car="numpy"} during initial bring-up, \texttt{car="mujoco"} for full rigid-body contact and tire slip). Unlike MPCC, PPO requires no explicit bicycle model or fitted tire parameters.
+
+    \item \textbf{Stage Cost / Reward ($r_n$):} At each $50~\text{ms}$ step, the reward balances fast forward progress against stability and track boundaries:
+    \[
+        r_n = w_{\text{prog}} \Delta s_n - w_c e_c^2 - w_\psi e_\psi^2 - w_{\Delta u} \|u_n - u_{n-1}\|^2 - w_{\text{time}} - R_{\text{crash}} \cdot \mathbb{I}(\text{off-track})
+    \]
+    \begin{itemize}[leftmargin=1.5em, itemsep=0.15em]
+        \item \textbf{Centerline progress ($w_{\text{prog}} \Delta s_n$, $w_{\text{prog}} = 1.0$):} Rewards distance gained along the centerline ($\Delta s_n = (s_n - s_{n-1} + L/2) \bmod L - L/2$ to handle start/finish wrap-around), preventing sideways drifting or slow wide arcs.
+        \item \textbf{Alignment penalties ($w_c = w_\psi = 0.05$):} Mildly discourages excessive centerline offset and slip angles while remaining small enough to permit clean apex cutting.
+        \item \textbf{Action smoothness ($w_{\Delta u} = 0.05$):} Penalizes step-to-step command jumps to prevent $20~\text{Hz}$ steering chatter from breaking tire grip.
+        \item \textbf{Step time penalty ($w_{\text{time}} = 0.01$):} Ensures stalling yields negative reward so minimum-time lap completion is the discounted optimum.
+        \item \textbf{Off-track penalty ($R_{\text{crash}} = 10.0$):} Applied upon off-track termination; kept moderate so the policy respects track limits without becoming overly timid in corners.
+    \end{itemize}
+
+    \item \textbf{Episode Start \& End ($x_0$, Termination vs.\ Truncation):}
+    \begin{itemize}[leftmargin=1.5em, itemsep=0.15em]
+        \item \textbf{Initial state distribution ($x_0$):} During training, episodes spawn at uniformly random centerline progress $s_0 \in [0, L)$ with small perturbations ($e_c \in [-0.3, 0.3]~\text{m}$, $e_\psi \in [-0.15, 0.15]~\text{rad}$, $v_x \in [0.5, 2.5]~\text{m/s}$) so PPO learns all corners evenly rather than overfitting to Turn~1. During evaluation, episodes start from rest at the official start line ($s_0 = 0$).
+        \item \textbf{Terminated (failure, bootstrap $= 0$):} Off-track ($|e_c| > w_{\text{half}} - w_{\text{car}}/2$), reverse heading ($|e_\psi| > \pi/2$), or stall ($< 0.3~\text{m}$ progress over a $2.0~\text{s}$ / 40-step window).
+        \item \textbf{Truncated (time limit, critic bootstrap):} Reaching $T_{\max} = 1000$ steps ($50~\text{s}$ at $20~\text{Hz}$), separated from \texttt{terminated} so surviving to the time limit is bootstrapped rather than penalized as a crash.
+    \end{itemize}
+\end{enumerate}
+
+%=====================================================================
+\section{Training Setup}
+\begin{itemize}[leftmargin=1.5em, itemsep=0.25em]
+    \item \textbf{PPO overview:} Proximal Policy Optimization (Schulman et al., 2017) is an actor-critic policy gradient method that stabilizes updates by clipping the probability ratio $r_t(\theta) = \frac{\pi_\theta(a_t|s_t)}{\pi_{\theta_{\text{old}}}(a_t|s_t)}$ within $[1-\epsilon, 1+\epsilon]$ so policy updates stay within an implicit trust region. A learned value function (critic) $V_\phi(s_t)$ estimates expected returns, and Generalized Advantage Estimation (GAE) trades off bias and variance when computing advantage targets $\hat{A}_t$.
+    \item \textbf{Key hyperparameters (SB3 defaults as starting baseline):} Discount factor $\gamma = 0.99$, GAE parameter $\lambda = 0.95$, clipping range $\epsilon = 0.2$, $K = 10$ optimization epochs per rollout, minibatch size $B = 64$ (with rollout buffer $N_{\text{steps}} = 2048$ per env), Adam learning rate $\alpha = 3 \times 10^{-4}$, and entropy coefficient $c_{\text{ent}} = 0.0$ (or $0.005$ if early exploration stalls), sourced from Schulman et al.\ (2017) and Stable-Baselines3 continuous-control defaults.
+    \item \textbf{Discount horizon:} With $\gamma = 0.99$ at $20~\text{Hz}$ ($\Delta t = 0.05~\text{s}$), the effective planning horizon is
+    \[
+        H_{\text{eff}} = \frac{1}{1 - \gamma} = 100~\text{steps} = 5.0~\text{s}.
+    \]
+    At $5\text{--}6~\text{m/s}$ on a 1:10 track, $5.0~\text{s}$ covers $25\text{--}30~\text{m}$---well beyond a 1:10 car's braking distance ($\approx 1.5\text{--}3~\text{m}$), giving the critic plenty of lookahead to anticipate sharp hairpins and brake early.
+    \item \textbf{Network architecture \& hardware:} Separate 2-layer MLPs ($[64, 64]$ with $\tanh$ activations) for the actor and critic, mapping the 15D normalized observation vector to 2D Gaussian action means/log-stds and scalar value estimates. Training runs on \textbf{CPU} because a 15D MLP has tiny matrix multiplications where GPU host-to-device transfer overhead slows down step collection compared to vectorized CPU rollouts.
+    \item \textbf{Scale \& wall-clock budget:} $8$ parallel environments via \texttt{SubprocVecEnv}, trained for $1.0 \times 10^6$ timesteps on \texttt{car="numpy"} ($\approx 10\text{--}15~\text{min}$ wall-clock) and $1.0\text{--}2.0 \times 10^6$ timesteps on \texttt{car="mujoco"} ($\approx 30\text{--}60~\text{min}$ wall-clock).
+    \item \textbf{Seeds \& reporting:} Train across $3\text{--}5$ random seeds per configuration; report mean $\pm$ standard deviation (and best lap time) across seeds rather than cherry-picking a single lucky run.
+    \item \textbf{Logging:} TensorBoard learning curves (episode reward, episode length, mean centerline progress, policy entropy, explained variance, KL divergence), periodic evaluation checkpoints every $50\text{k}$ steps (saving both \texttt{policy.zip} and \texttt{vecnormalize.pkl}), and rendered MP4 trajectory rollouts on the track.
+\end{itemize}
+
+%=====================================================================
+\section{Step-by-Step Implementation}
+
+\subsection*{Step 1 -- Toy-task sanity run}
+Run SB3 PPO with \texttt{VecNormalize} and \texttt{SubprocVecEnv} on \texttt{Pendulum-v1} to verify the training, evaluation, and checkpoint-saving script end-to-end.
+\textbf{Test:} Mean evaluation reward rises smoothly from $\approx -1200$ to $> -250$ within $100\text{k}$ steps, and saved weights + normalization stats reload cleanly for deterministic inference.
+
+\subsection*{Step 2 -- Placeholder \texttt{RacingEnv} interface verification}
+Wrap a lightweight mock environment matching the agreed 15D observation and 2D action shapes and run SB3's \texttt{check\_env} plus a 5k-step dry run.
+\textbf{Test:} \texttt{gymnasium.utils.env\_checker.check\_env} passes with zero warnings, observation/action bounds match the interface spec, and \texttt{terminated} vs.\ \texttt{truncated} flags behave properly.
+
+\subsection*{Step 3 -- First real training with progress-only reward (\texttt{car="numpy"})}
+Train PPO on the stand-in NumPy car using only progress and crash/stall termination ($w_{\text{prog}} = 1.0$, $R_{\text{crash}} = 10.0$, smoothness/alignment weights $= 0$).
+\textbf{Test:} Agent learns to accelerate forward around initial corners without immediately spinning out or driving backward, with mean episode progress increasing monotonically on TensorBoard.
+
+\subsection*{Step 4 -- Full reward, added one term at a time}
+Incrementally enable alignment penalties ($w_c, w_\psi$), action smoothness ($w_{\Delta u}$), and step time cost ($w_{\text{time}}$), tuning weights on \texttt{car="numpy"}.
+\textbf{Test:} Policy completes \textbf{one full lap}, defined as advancing centerline progress $s$ continuously from $s = 0$ through $s = L$ ($100\%$ of track length) with zero off-track violations ($|e_c| \le w_{\text{half}} - w_{\text{car}}/2$) and smooth steering/throttle traces.
+
+\subsection*{Step 5 -- Swap to the MuJoCo environment (\texttt{car="mujoco"})}
+Switch the backend flag from \texttt{car="numpy"} to \texttt{car="mujoco"}, evaluate the NumPy-trained policy zero-shot as a baseline, and retrain/fine-tune under MuJoCo contact and tire-slip physics.
+\textbf{Test:} Observation shapes, action scaling, reward calculation, neural network architecture, and SB3 training/evaluation scripts require \textbf{zero code changes}---only the environment backend flag and tuned reward/hyperparameter config change.
+
+\subsection*{Step 6 -- Final experiments: multi-seed runs, ablations, and robustness}
+Run $3\text{--}5$ seeds on the primary track, execute one-factor-at-a-time ablations, and benchmark zero-shot generalization on the unseen track and reduced-friction conditions against Pure Pursuit and MPCC.\\
+\textbf{Test:} A result is valid only if evaluated deterministically with frozen \texttt{VecNormalize} running statistics (\texttt{training=False}), identical $20~\text{Hz}$ actuator limits and track boundaries across all controllers, and reported with mean $\pm$ std across seeds.
+%=====================================================================
+\section{Experiments and Success Criteria}
+\begin{center}
+\begin{tabular}{l p{0.3\textwidth} p{0.3\textwidth}}
+\toprule
+Metric & What it tells us & Success criterion\\
+\midrule
+Lap time (mean \& best, s) & Raw racing speed and line optimality around the closed track & Beats Pure Pursuit mean lap time on Track 1; within $5\text{--}10\%$ of MPCC\\
+Completion rate (\%) & Policy reliability and safety at high speed over 20 eval rollouts & $\ge 95\%$ clean laps on Track 1; $\ge 80\%$ zero-shot on Track 2\\
+Control smoothness ($\|\Delta u\|_2$) & Steering/throttle stability without $20~\text{Hz}$ chatter & Mean $\|\Delta u\|_2$ comparable to MPCC and free of high-frequency oscillation\\
+\bottomrule
+\end{tabular}
+\end{center}
+\begin{itemize}[leftmargin=1.5em, itemsep=0.25em]
+    \item \textbf{Ablations (one change at a time):} (1) Remove action smoothness penalty ($w_{\Delta u} = 0$) to quantify its effect on steering jitter and tire slip; (2) vary curvature lookahead horizon ($1.5~\text{m}$ short preview vs.\ $3.0~\text{m}$ default vs.\ $5.0~\text{m}$ long preview); and (3) disable random track-progress spawning ($s_0 = 0$ fixed start) to measure overfitting to early corners.
+    \item \textbf{Robustness tests:} (1) Zero-shot transfer to an unseen second track layout with different corner radii; and (2) reduced tire-road friction coefficient ($\mu$ lowered by $20\text{--}30\%$) without retraining. Both tests are benchmarked directly against \textbf{Pure Pursuit} and \textbf{MPCC} under identical physics and actuator limits.
+\end{itemize}
+%=====================================================================
+\section{Risks and Mitigations}
+\begin{center}
+\begin{tabular}{p{0.45\textwidth}p{0.45\textwidth}}
+\toprule
+Risk & Mitigation\\
+\midrule
+\textbf{Environment late:} \texttt{car="numpy"} or \texttt{car="mujoco"} slips past target date & Validate the entire SB3 + \texttt{VecNormalize} pipeline early on \texttt{Pendulum-v1} and a mock \texttt{RacingEnv}, so real training starts within an hour of environment delivery.\\
+\textbf{Reward hacking:} Car creeps slowly to avoid crashes, cuts corners, or oscillates progress around $s=0$ & Use modulo centerline progress $\Delta s_n$, add per-step time penalty $w_{\text{time}}$ plus a $2.0~\text{s}$ stall termination, and enforce strict off-track boundary termination.\\
+\textbf{Training too slow:} MuJoCo stepping bottlenecks sample throughput & Do all reward shaping and architecture validation on fast \texttt{car="numpy"} first, run $8$ parallel workers via \texttt{SubprocVecEnv}, and disable rendering during training.\\
+\textbf{PPO learns nothing / unstable:} Exploding gradients or policy collapse from mixed input scales & Normalize all 15 observations via \texttt{VecNormalize}, start with progress-only reward before adding penalties, and monitor KL divergence and explained variance in TensorBoard.\\
+\bottomrule
+\end{tabular}
+\end{center}
+%=====================================================================
+\section{Work Plan}
+\begin{center}
+\begin{tabular}{l p{0.42\textwidth} p{0.35\textwidth}}
+\toprule
+Dates & Work & Deliverable\\
+\midrule
+Nov 20 -- Nov 26 & Sign off on \texttt{RacingEnv} API; verify SB3 pipeline on mock env; train and tune PPO on \texttt{car="numpy"} & Working PPO policy completing clean laps on NumPy car + TensorBoard curves\\
+Nov 27 -- Dec 03 & Migrate to \texttt{car="mujoco"}; retune reward weights for realistic tire slip; gather initial baseline metrics & MuJoCo-trained PPO checkpoint + initial lap-time table for Dec 3 pre-report\\
+Dec 04 -- Dec 10 & Run multi-seed evaluations, ablations, and robustness tests (unseen track, low $\mu$); export weights for Pygame & Final benchmark plots, ablation tables, and race-ready policy for Dec 10 presentation\\
+Dec 11 -- Dec 17 & Finalize failure-mode analysis, clean up reproducible training/eval scripts, and write PPO report sections & Final technical report and documented codebase submitted Dec 17\\
+\bottomrule
+\end{tabular}
+\end{center}
+%=====================================================================
+
+\section{Team Coordination}
+\begin{itemize}[leftmargin=1.5em, itemsep=0.25em]
+    \item \textbf{With Cristhian (Environment \& Physics):} Freeze the \texttt{RacingEnv} Gymnasium API by Nov 22---specifically the 15D observation ordering and units, $20~\text{Hz}$ step rate with $2\text{--}5~\text{ms}$ sub-steps, actuator rate-limiter behavior, training off-track termination vs.\ race grass slowdown flags, and target dates for \texttt{car="numpy"} (Nov 22--23) and \texttt{car="mujoco"} (Nov 27).
+    \item \textbf{With Nathaly (Evaluation \& Pygame Integration):} Agree on exact evaluation metrics (mean/best lap time, clean completion rate, action smoothness), fixed evaluation start state ($s_0 = 0$, $v_0 = 0$), number of evaluation rollouts ($20$ episodes), and the inference interface (\texttt{policy.predict(obs, deterministic=True)} + frozen \texttt{VecNormalize} stats) for the Pygame race loop.
+    \item \textbf{With Berinay (MPCC Baseline):} Confirm strictly identical comparison conditions across MPCC, Pure Pursuit, and PPO: identical $20~\text{Hz}$ control frequency, identical steering angle ($0.42~\text{rad}$) and slew-rate ($3.2~\text{rad/s}$) limits, identical track width/boundaries, and identical primary and unseen test tracks.
+\end{itemize}
+\end{document}

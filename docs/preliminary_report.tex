@@ -1,0 +1,193 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+
+% Placeholder marker: delete every \todo{} before submitting.
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+\title{\textbf{Preliminary Report: AI Racing Challenge} \\ \large Pure Pursuit vs.\ MPCC vs.\ PPO}
+\author{\todo{Nataly, Berinay, Christian, Pavan}}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\noindent\textbf{GitHub repository:} \url{https://github.com/wukongxzero/AI-racing-challenge}
+
+%=====================================================================
+\section{Summary}
+% 3-5 sentences: what the project is, what is working today, what is next.
+% [PROMPT: "a short description of the project"] reuse ppo_plan.tex §1.
+
+\todo{summary}
+
+%=====================================================================
+\section{Changes Since the Proposal}
+% What changed in scope or design since 11-08, and why.
+% (e.g. racing objective vs. path tracking, tire model, MPC model choice, roles)
+
+\todo{changes and reasons}
+
+%=====================================================================
+\section{Simulation Environment}
+% [PROMPT: "tools to be used (simulator, existing code, etc)"] -- the simulator part.
+% The prompt also wants the OTHER tools (SB3, CasADi+IPOPT, Pygame, Gymnasium,
+% PyTorch, TensorBoard): add them in Interface or a short table (ppo_plan.tex §2).
+\subsection{Vehicle Model}
+% State, controls, dynamics model, integrator, dt, parameters.
+
+\todo{vehicle model}
+
+\subsection{Track Representation}
+% How the track is stored; what the projection function returns.
+
+\todo{track}
+
+\subsection{Interface Shared by All Controllers}
+% The step/reset contract every controller codes against; termination; config file.
+
+\todo{interface}
+
+\subsection{Status}
+% What is implemented and tested; what is not yet.
+
+\todo{sim status}
+
+%=====================================================================
+\section{Controllers}
+% [PROMPT: "algorithms to be implemented"]
+\subsection{Pure Pursuit (Baseline)}
+% Steering law, lookahead, speed profile, status.
+
+\todo{pure pursuit}
+
+\subsection{MPCC}
+% Optimal control problem: decision variables, cost, dynamics constraints,
+% inequality constraints, horizon, solver, warm start. Status.
+
+\todo{MPC formulation}
+
+\subsection{PPO}
+% Observation, action, reward, termination, network, training setup, seeds. Status.
+
+% Copied word for word from ppo_plan.tex §4 (your text). TODO for you: trim to
+% "brief" (the prompt says brief), and add Training + Status below.
+\begin{enumerate}[leftmargin=1.5em, itemsep=0.35em]
+    \item \textbf{State vs.\ Observation ($x_n$ vs.\ $o_n$):} While the underlying simulator state $x_n$ tracks global coordinates $(X, Y, \psi)$, wheel spins, and track progress, PPO receives a 15-dimensional ego-centric observation vector $o_n \in \mathbb{R}^{15}$ that omits global $(X, Y, \psi, V_X, V_Y)$ so the policy cannot memorize map coordinates and instead generalizes across corners and unseen tracks:
+    \begin{itemize}[leftmargin=1.5em, itemsep=0.15em]
+        \item \textbf{Body-frame motion (3):} Forward speed $v_x$, lateral slip speed $v_y$, and yaw rate $r$.
+        \item \textbf{Actuator state (1):} Actual current steering angle $\delta_{\text{curr}}$ (necessary because steering is rate-limited at $3.2~\text{rad/s}$ and can lag behind commanded steering).
+        \item \textbf{Track-relative errors (2):} Signed lateral offset $e_c$ from the centerline and heading error $e_\psi \in [-\pi, \pi]$ relative to the road tangent.
+        \item \textbf{Previous action (2):} $[\text{throttle}_{n-1}, \text{steering}_{n-1}]$ to encourage smooth control transitions.
+        \item \textbf{Curvature lookahead (6):} Upcoming centerline curvatures $\kappa_1, \dots, \kappa_6$ sampled every $0.5~\text{m}$ from $0.5~\text{m}$ to $3.0~\text{m}$ ahead ($\approx 0.5~\text{s}$ preview at $5\text{--}6~\text{m/s}$).
+        \item \textbf{Local track half-width (1):} $w_{\text{half}}$ so the policy knows available road width when width varies between straights and hairpins.
+    \end{itemize}
+    All 15 inputs are standardized online using Stable-Baselines3's \texttt{VecNormalize} (running mean and variance) so velocities, angles, and curvatures sit on a comparable scale.
+
+    \item \textbf{Control / Action Space ($u_n$):} A 2D continuous command $u_n = [\text{throttle}_n, \text{steering}_n] \in [-1, 1]^2$ issued at $20~\text{Hz}$ and held over each $\Delta t = 50~\text{ms}$ control step. Inside \texttt{RacingEnv}, the shared limiter scales steering to $[-0.42, 0.42]~\text{rad}$ and enforces the $\le 3.2~\text{rad/s}$ steering slew rate.
+
+    \item \textbf{Transition Dynamics:} Treated as a model-free Markov transition $x_{n+1} \sim P(\cdot \mid x_n, u_n)$ stepped by \texttt{RacingEnv} over $2\text{--}5~\text{ms}$ physics sub-steps (\texttt{car="numpy"} during initial bring-up, \texttt{car="mujoco"} for full rigid-body contact and tire slip). Unlike MPCC, PPO requires no explicit bicycle model or fitted tire parameters.
+
+    \item \textbf{Stage Cost / Reward ($r_n$):} At each $50~\text{ms}$ step, the reward balances fast forward progress against stability and track boundaries:
+    \[
+        r_n = w_{\text{prog}} \Delta s_n - w_c e_c^2 - w_\psi e_\psi^2 - w_{\Delta u} \|u_n - u_{n-1}\|^2 - w_{\text{time}} - R_{\text{crash}} \cdot \mathbb{I}(\text{off-track})
+    \]
+    \begin{itemize}[leftmargin=1.5em, itemsep=0.15em]
+        \item \textbf{Centerline progress ($w_{\text{prog}} \Delta s_n$, $w_{\text{prog}} = 1.0$):} Rewards distance gained along the centerline ($\Delta s_n = (s_n - s_{n-1} + L/2) \bmod L - L/2$ to handle start/finish wrap-around), preventing sideways drifting or slow wide arcs.
+        \item \textbf{Alignment penalties ($w_c = w_\psi = 0.05$):} Mildly discourages excessive centerline offset and slip angles while remaining small enough to permit clean apex cutting.
+        \item \textbf{Action smoothness ($w_{\Delta u} = 0.05$):} Penalizes step-to-step command jumps to prevent $20~\text{Hz}$ steering chatter from breaking tire grip.
+        \item \textbf{Step time penalty ($w_{\text{time}} = 0.01$):} Ensures stalling yields negative reward so minimum-time lap completion is the discounted optimum.
+        \item \textbf{Off-track penalty ($R_{\text{crash}} = 10.0$):} Applied upon off-track termination; kept moderate so the policy respects track limits without becoming overly timid in corners.
+    \end{itemize}
+
+    \item \textbf{Episode Start \& End ($x_0$, Termination vs.\ Truncation):}
+    \begin{itemize}[leftmargin=1.5em, itemsep=0.15em]
+        \item \textbf{Initial state distribution ($x_0$):} During training, episodes spawn at uniformly random centerline progress $s_0 \in [0, L)$ with small perturbations ($e_c \in [-0.3, 0.3]~\text{m}$, $e_\psi \in [-0.15, 0.15]~\text{rad}$, $v_x \in [0.5, 2.5]~\text{m/s}$) so PPO learns all corners evenly rather than overfitting to Turn~1. During evaluation, episodes start from rest at the official start line ($s_0 = 0$).
+        \item \textbf{Terminated (failure, bootstrap $= 0$):} Off-track ($|e_c| > w_{\text{half}} - w_{\text{car}}/2$), reverse heading ($|e_\psi| > \pi/2$), or stall ($< 0.3~\text{m}$ progress over a $2.0~\text{s}$ / 40-step window).
+        \item \textbf{Truncated (time limit, critic bootstrap):} Reaching $T_{\max} = 1000$ steps ($50~\text{s}$ at $20~\text{Hz}$), separated from \texttt{terminated} so surviving to the time limit is bootstrapped rather than penalized as a crash.
+    \end{itemize}
+\end{enumerate}
+
+\paragraph{Training.}
+% SB3 PPO from scratch, Adam lr 3e-4 (SB3 default), >= 3 seeds, TensorBoard;
+% one sentence on PPO (clip, critic, GAE) + cite Schulman 2017.
+\todo{training}
+
+\paragraph{Status.}
+% Design done; first run = toy env, then the stand-in car.
+\todo{status}
+
+%=====================================================================
+\section{Preliminary Results}
+% Anything measured so far. If no results yet, say what the first test will be.
+% [PROMPT: "describe any preliminary work done"] repo, tracks, interface doc, plans.
+
+\todo{results or first planned test}
+
+% \begin{figure}[h]\centering
+% \includegraphics[width=0.8\textwidth]{figures/FILENAME.png}
+% \caption{TODO}\label{fig:TODO}
+% \end{figure}
+
+%=====================================================================
+\section{Evaluation Plan}
+% Metrics, tracks (incl. unseen), number of seeds, how the comparison is kept fair.
+% [PROMPT: "planned ... experiments and expected results"] -- the prompt asks for
+% EXPECTED RESULTS too: add 2-3 sentences after the table (ppo_plan.tex §1 success).
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Metric & How measured & Why it matters\\
+\midrule
+\todo{} & & \\
+\todo{} & & \\
+\todo{} & & \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%=====================================================================
+\section{Team Roles and Contributions So Far}
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Member & Responsibility & Done so far\\
+\midrule
+\todo{} & & \\
+\todo{} & & \\
+\todo{} & & \\
+\todo{} & & \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%=====================================================================
+\section{Timeline and Next Steps}
+% Milestones until the 12-03 pre-report and 12-10 presentation.
+% [PROMPT: "planned work"]
+
+\todo{timeline}
+
+%=====================================================================
+\section{Risks and Open Questions}
+% What could block you, and the fallback for each.
+% Include the 2-3 biggest controller failure risks, one line each (risk -> fallback).
+% FINAL REPORT (12-17): add a full "Failure Modes" section here, table with
+% columns Failure | Detection | Response | Evidence, filled with real results.
+
+\todo{risks}
+
+\end{document}

@@ -18,3 +18,10 @@ results/
 .DS_Store
 .vscode/
 .idea/
+*.aux
+*.log
+*.fls
+*.fdb_latexmk
+*.out
+*.synctex.gz
+docs/references/
