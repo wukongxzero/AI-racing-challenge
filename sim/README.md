@@ -64,7 +64,7 @@ in arc length; `length` = lap length.
 Dynamic bicycle model, F1TENTH geometry (m 3.74 kg, Iz 0.0471, lf 0.159, lr 0.171,
 wheelbase 0.33 m, width 0.31 m). Tire forces with mu = 1.0 (≈1 g grip) and a friction
 ellipse. All-wheel drive, no reverse. Steering: 0.42 rad max, 3.2 rad/s rate. Below
-0.8 m/s it blends into a kinematic model. **Provisional:** a_max 5 m/s², brake 8 m/s²,
+1 m/s it blends into a kinematic model (pure kinematic below 0.3 m/s). **Provisional:** a_max 5 m/s², brake 8 m/s²,
 top speed 8 m/s, grass grip ×0.6 + extra drag.
 
 ## Viewer (`sim/viewer.py`)

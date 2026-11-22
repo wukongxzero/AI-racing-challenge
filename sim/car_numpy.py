@@ -14,7 +14,7 @@ Model:
   * All-wheel drive (like the F1TENTH Traxxas 4x4); drive and brake force split
     by static axle load. No reverse: full brake stops the car.
   * Resistances: rolling + aero drag (sets the top speed) + extra drag on grass.
-  * Below ~0.8 m/s the model blends into a kinematic bicycle (the dynamic one is
+  * Between 0.3 and 1 m/s the model blends into a kinematic bicycle (the dynamic one is
     singular at standstill); its accelerations are capped at the grip limit too.
   * Steering moves toward the commanded angle no faster than delta_rate_max.
   * RK4 integration, `substeps` per 50 ms control step.
@@ -58,7 +58,7 @@ class CarParams:
     dt: float = 0.05              # control period (20 Hz)
     substeps: int = 10            # physics steps per control step
     v_blend_low: float = 0.3      # below: pure kinematic model
-    v_blend_high: float = 0.8     # above: pure dynamic model
+    v_blend_high: float = 1.0     # above: pure dynamic model
     kin_tau: float = 0.05         # relaxation time of vy, r to kinematic values (s)
 
     @property
