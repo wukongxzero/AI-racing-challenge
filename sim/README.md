@@ -1,4 +1,17 @@
-# Racing environment (`sim/`) – stand-in NumPy car
+# Racing environment (`sim/`)
+
+The shared environment every controller drives: the car, the track code and a Gymnasium env with
+the agreed interface. Now `car="numpy"`; the MuJoCo car later plugs in behind the same interface.
+Owner: Cristhian.
+
+**Contents:** [Quick start](#quick-start) · [Start here by role](#start-here-by-role) ·
+[Environment options](#environment-options) · [Observation and info](#observation-and-info) ·
+[Laps and logs](#laps-and-logs) · [Track helpers](#track-helpers-envtrack) ·
+[Car](#car-envcar_params) · [CasADi car](#casadi-car-simcar_casadipy-for-mpcc) ·
+[Videos](#videos-simvideopy) · [Keyboard teleop](#keyboard-teleop-simteleoppy) ·
+[Viewer](#viewer-simviewerpy) · [Known simplifications](#known-simplifications)
+
+## Quick start
 
 ```python
 from sim import RacingEnv
@@ -13,39 +26,73 @@ s, e_c, e_psi, kappa = track.project(x, y, psi, s_prev)       # s_prev=None: sea
 x_c, y_c = track.point_at(s)                                  # wraps around the lap
 ```
 
-Run the example and tests:
-
-```
-python sim/examples/drive_lap.py                       # 1 lap with a Pygame top-down view
+```bash
+python sim/examples/drive_lap.py                       # a demo lap in a Pygame window
 python sim/examples/drive_lap.py --laps 3 --track hidden
 python sim/examples/drive_lap.py --no-view --plot --log run.csv
-python sim/examples/drive_lap.py --video lap.mp4   # record a lap
-python sim/tests/test_racing.py
+python sim/examples/drive_lap.py --video lap.mp4       # record a lap
+python sim/examples/drive_keyboard.py                  # drive it yourself
+python sim/tests/test_racing.py                        # all tests (a few seconds)
 ```
 
-Install, once, from the repo root: `pip install -r requirements.txt`, then `pip install -e .` (makes
-`import sim` work from any folder, e.g. `controllers/ppo/train.py`). The team uses `pygame-ce` (community edition of pygame, same `import pygame`); it installs on every Python version. Don't install regular `pygame` in the same Python.
+Setup (once, from the repo root): `pip install -r requirements.txt` and `pip install -e .`
+(see the main README). The team uses `pygame-ce` (same `import pygame`, installs on every Python
+version); don't install regular `pygame` in the same Python.
 
-## Environment
+## Start here by role
+
+**PPO (Pavan)**
+- Make the env with `gymnasium.make("Racing-v0", off_track="terminate", time_limit=50)` (50 s = 1000
+  steps). Through `gym.make`, Gymnasium's `check_env` passes every check with zero warnings.
+- Your 15 inputs are all in `info` by name: `vx, vy, yaw_rate, delta, e_c, e_psi, prev_throttle,
+  prev_steer, kappa_ahead` (6 values, 0.5–3.0 m ahead), `w_left` / `w_right`. The env's own `obs`
+  vector is ordered as `env.obs_names` (a test checks it).
+- Termination signals: off track → `terminated` in `"terminate"` mode; reverse heading → `|e_psi| > π/2`;
+  stall → `progress_rate` (m/s along the track) near 0.
+- Random starts as ranges, drawn every reset and reproducible with `seed`:
+  `reset(options={"random_start": True, "e_psi0": (-0.15, 0.15), "v0": (0.5, 2.5)})`.
+- Fast training: `log=False`, no `render_mode` (about 3,500 steps/s per env; 8 parallel envs work).
+- Videos: `render_mode="rgb_array"` + `sim.video.record_episode`. Gymnasium's `RecordVideo` needs
+  `moviepy`, which can't be installed on Python 3.15.
+
+**MPCC (Berinay)**
+- Track as CasADi B-splines: `env.track.casadi_centerline()` → x(s), y(s), theta(s), kappa(s).
+- The car's own equations in CasADi: `sim/car_casadi.py` (tested identical to the simulator).
+- The car **understeers**: a kinematic model over-predicts turning about 2× at 5 m/s, so a kinematic
+  MPCC runs wide; use `dynamic_model`, or use the difference as a model-mismatch experiment.
+- Steering is rate-limited in the simulator: constrain |δ_k − δ_(k−1)| ≤ 3.2·0.05 rad, starting from
+  `info["delta"]`. Positions are at the centre of mass, not the rear axle.
+- Sign: our `e_c` is **positive to the left**; the common MPCC contouring formula has the opposite sign.
+
+**Pure Pursuit, game and evaluation (Nathaly)**
+- Lookahead point: `env.track.point_at(s + Ld)`; wheelbase etc. in `env.car_params`.
+- Speed profile: use `env.car_params["a_lat_max"]` (≈ 7.9 m/s², the grip the car really has) with a
+  margin, **not μ·g** – with μ·g the car leaves the track in tight corners. Because the car
+  understeers, plain Pure Pursuit drifts wide in long corners.
+- Results: `env.lap_log` gives lap time, off-track count and `clean` per lap; every recorded lap is a
+  full lap. Count clean laps (cutting a corner across the grass is slower but can gain a little).
+- Per-step logs: `env.get_log()` / `env.save_log(path)`.
+- Game: the viewer draws several cars at once ("ghosts"); the human uses `sim.teleop`, whose
+  input shaping must be reported in results (see [Keyboard teleop](#keyboard-teleop-simteleoppy)).
+
+## Environment options
 - `car`: `"numpy"` now; `"mujoco"` later behind the same interface.
 - `track`: `"training"`, `"hidden"` or a CSV path.
 - `off_track`: `"grass"` (less grip + extra drag, keeps going, events counted) or `"terminate"`.
   Off track = any part of the car past the road edge (|e_c| > half-width − half car width).
-- `max_laps` → `terminated`; `time_limit` (s) → `truncated` (PPO: `time_limit=50` = 1000 steps).
+- `max_laps` → `terminated`; `time_limit` (s) → `truncated`.
 - `mu_scale`: friction multiplier for robustness tests (creation or `reset(options={"mu_scale": 0.7})`).
-- `reset(options=...)`: `s0, e_c0, e_psi0, v0` as numbers or `(low, high)` ranges drawn at every reset
-  (e.g. `{"random_start": True, "v0": (0.5, 2.5)}`); `random_start` fills in the rest. Seeded via
+- `reset(options=...)`: default = start line, centred, at rest. `s0, e_c0, e_psi0, v0` as numbers or
+  `(low, high)` ranges drawn at every reset; `random_start: True` fills in the rest; seeded via
   `reset(seed=...)`. A misspelled option name raises an error.
-- Actions must be finite: a NaN or inf action raises an error (instead of silently becoming full throttle).
-  Default: start line, centred, at rest.
-- One step = one 50 ms command (20 Hz). The sim waits for the controller (evaluation mode);
-  the example shows real-time pacing for game mode.
+- Actions must be finite: a NaN or inf action raises an error (instead of silently becoming full
+  throttle). `step()` before `reset()` raises an error.
+- One step = one 50 ms command (20 Hz). The sim waits for the controller (evaluation mode); the
+  examples show real-time pacing for the game.
 - Default reward = metres of progress this step − `off_track_penalty` while off track.
   Pass `reward_fn=lambda info: ...` to replace it (Pavan owns the reward).
 - `log=False` turns off per-step logging for fast training.
 - Also available as `gymnasium.make("Racing-v0", **same_arguments)` (registered on `import sim`).
-  Through `gym.make`, Gymnasium's `check_env` runs every check, render modes included, with
-  zero warnings; on a directly created `RacingEnv` it warns that it can't test render modes.
 - `render_mode`: `None` (default, nothing drawn, fastest), `"rgb_array"` (`render()` returns a
   960×640 top-down picture) or `"human"` (live window, real time).
 
@@ -59,13 +106,12 @@ going backwards, ≈0 = stalled), `lap, lap_times, lap_completed, off_track, off
 
 ## Laps and logs
 - A lap counts at each start-line crossing (time interpolated inside the 50 ms step).
-  Progress comes from windowed projection, so shortcuts and reversing over the line don't
-  count. Only a start on the start line (s0 = 0) times lap 1; from a mid-track start the first
-  crossing just starts the timing, so every recorded lap is a full lap.
+  Progress comes from windowed projection, so reversing over the line doesn't count. Only a start
+  on the start line (s0 = 0) times lap 1; from a mid-track start the first crossing just starts
+  the timing, so every recorded lap is a full lap.
 - `env.get_log()` / `env.save_log(path)`: every step's time, state, command, s, progress,
   e_c, e_psi, off-track flag and lap. `env.lap_log`: lap time, off-track count and `clean`
-  (no off-track) per lap. Cutting a corner across the grass is slower but can gain a little,
-  so results should count only clean laps.
+  (no off-track) per lap.
 
 ## Track helpers (`env.track`)
 `heading(s)`, `curvature(s)`, `width(s)`, `lookahead(s, dists)`, `heading_ahead(s, dists, psi)`,
@@ -77,12 +123,11 @@ in arc length; `length` = lap length.
 The team's planned dynamic bicycle model (equations at the top of `sim/car_numpy.py`),
 F1TENTH geometry (m 3.74 kg, Iz 0.0471, lf 0.159, lr 0.171, wheelbase 0.33 m, width 0.31 m).
 - Tires: Pacejka formula (Liniger et al. 2015); curve shape B, C from the authors' public code
-  (github.com/alexliniger/MPCC, identified on their 1:43 car); peak force = mu × axle load,
-  mu = 0.9. Usable sideways grip `a_lat_max` ≈ 7.9 m/s² (0.89·mu·g; it follows `mu_scale`) –
-  use this, not mu·g, for speed profiles, and keep a margin. The car **understeers**: it needs more steering than
-  the geometry says, more so at speed (the example controller compensates).
-- Acceleration is applied directly (`to_action` is exact), hard top speed, no reverse,
-  no air drag. Braking doesn't reduce cornering grip (known simplification).
+  (github.com/alexliniger/MPCC, identified on their 1:43 car); peak force = μ × axle load, μ = 0.9.
+  Cross-checked against ETH ForzaETH's identified F1TENTH tires (similar handling).
+- Usable sideways grip `a_lat_max` ≈ 7.9 m/s² (0.89·μ·g; follows `mu_scale`). The car
+  **understeers**: it needs more steering than the geometry says, more so at speed.
+- Acceleration is applied directly (`to_action` is exact), hard top speed, no reverse.
 - Steering: 0.42 rad max, 3.2 rad/s rate. Kinematic model below 0.3 m/s, blended up to 1 m/s.
 - **Provisional:** a_max 5 m/s², brake 8 m/s², top speed 8 m/s, grass grip ×0.6 + extra drag.
 
@@ -96,13 +141,10 @@ fk = kinematic_model(env.car_params)  # x = [X, Y, psi, v], u = [a, delta]
 F = discretize(f, dt=0.05)            # x_next = F(x, u): one 50 ms step (RK4, 10 sub-steps like the sim)
 x0 = state_from_info(info)            # current state from the env
 ```
-Steering is an input here but rate-limited in the simulator: add |δ_k − δ_(k−1)| ≤ 3.2·dt and start
-from `info["delta"]`. Below 1 m/s the simulator blends to the kinematic model.
-**The car understeers:** at 5 m/s it turns only ~53 % as sharply as the kinematic model (and
-ψ̇ = v/L·tan δ) predicts, so a kinematic MPCC plans turns the car can't make and runs wide at
-speed. Use `dynamic_model` to match the simulator, or treat kinematic vs dynamic as a
-model-mismatch experiment. Our x, y are at the centre of mass, not the rear axle. Measured on one laptop:
-IPOPT solves a simple tracking MPC with this model in ~18 ms (1 s horizon) / ~33 ms (2 s) warm-started.
+Steering is an input here but rate-limited in the simulator (see Start here by role). Below 1 m/s
+the simulator blends to the kinematic model. At 5 m/s the car turns only ~53 % as sharply as the
+kinematic model predicts. Measured on one laptop: IPOPT solves a simple tracking MPC with
+`dynamic_model` in ~18 ms (1 s horizon) / ~33 ms (2 s) warm-started; the budget is 50 ms.
 
 ## Videos (`sim/video.py`)
 `record_episode(env, act, "lap.mp4")` runs one episode with `act(obs, info) -> action` and saves
@@ -119,13 +161,18 @@ from sim.teleop import KeyboardTeleop
 teleop = KeyboardTeleop(env.car_params)                 # steer_assist=True for the optional assist
 action = teleop.action_from_pygame(speed=info["vx"])    # same [throttle, steering] as the controllers
 ```
-The human goes through the same limits as every controller (the car turns its wheels at most
-3.2 rad/s). Gas ramps up over 0.3 s (human-only input shaping so on/off keys don't jerk the car;
-`throttle_ramp_time=0` turns it off; report it in results); Down brakes fully; no key = coast. The optional steering
-assist (off by default) caps the steering request at speed to what the tires can use, so a held key
-can't spin the car; it only ever asks for less steering, and should be reported if used in results.
+The human goes through the same car limits as every controller. **Human-only input shaping (report
+it in results):** gas ramps up over 0.3 s so on/off keys don't jerk the car (`throttle_ramp_time=0`
+turns it off); steering is full left / right / straight; the optional steering assist (off by
+default) caps the steering request at speed to what the tires can use. All of these only make the
+human's input gentler, never stronger than what controllers can command.
 
 ## Viewer (`sim/viewer.py`)
 `TopDownView(track).draw(cars, text)` draws any number of cars (dicts with x, y, psi,
 color). Drawing only – it never steps physics – so the game can step several envs and draw
 them together.
+
+## Known simplifications
+State these in the report: no load transfer between axles, no longitudinal tire slip, braking or
+accelerating doesn't reduce cornering grip, no air drag (top speed is a hard limit), tire shape from
+a 1:43 RC car scaled to the F1TENTH car's weight, and provisional speed/acceleration limits.

@@ -1,7 +1,11 @@
 # AI Racing Challenge
 
 ROB-GY 6323 (Reinforcement Learning & Optimal Control) team project, Fall 2026.
-2D racing sim comparing Pure Pursuit, MPC, and PPO controllers, plus a human player.
+
+Four "drivers" race the **same simulated 1:10 race car on the same track**: a Pure Pursuit baseline,
+MPCC (model predictive contouring control), a PPO agent (reinforcement learning) and a human with the
+keyboard. Car, track and limits are identical for everyone, so differences in results come from the
+controllers alone. The simulator doubles as a Pygame game.
 
 ## Team
 
@@ -12,23 +16,44 @@ ROB-GY 6323 (Reinforcement Learning & Optimal Control) team project, Fall 2026.
 | 3 | Pavan Velagaleti | Reinforcement learning: PPO observations, reward, training |
 | 4 | Nathaly Berrezueta | Integration & analytics: Pure Pursuit, game modes, metrics, plots |
 
+## Getting started
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows (PowerShell): .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install -e .                   # once: makes `import sim` work from any folder
+```
+
+Why `pip install -e .`: Python only finds `sim` from the repo's top folder, so a script inside
+`controllers/`, `game/` or `eval/` would fail with "No module named 'sim'". This one-time command fixes
+that for every folder; `-e` ("editable") means it uses the live files, so `git pull` keeps it up to date.
+
+Try it:
+
+```bash
+python sim/examples/drive_lap.py         # watch a demo lap
+python sim/examples/drive_keyboard.py    # drive it yourself with the arrow keys
+python sim/tests/test_racing.py          # run the tests (a few seconds)
+```
+
 ## Layout
 
 | Folder | Owner | Contents |
 |---|---|---|
-| `sim/` | Cristhian | vehicle model, physics step (runs without Pygame) |
-| `tracks/` | Cristhian | track definitions |
+| `sim/` | Cristhian | the shared racing environment: car, track code, Gymnasium env, viewer, keyboard teleop |
+| `tracks/` | Cristhian | track CSVs: `training_track.csv` (127 m) and `hidden_track.csv` (95 m, never used for training) |
 | `controllers/pure_pursuit/` | Nathaly | Pure Pursuit baseline |
-| `controllers/mpc/` | Berinay | MPC (CasADi + IPOPT) |
-| `controllers/ppo/` | Pavan | Gymnasium env wrapper, reward, PPO training |
+| `controllers/mpc/` | Berinay | MPCC (CasADi + IPOPT) |
+| `controllers/ppo/` | Pavan | observation/reward wrapper, PPO training |
 | `game/` | Nathaly | Pygame front end, race modes |
 | `eval/` | Nathaly | metrics, comparison plots |
 | `docs/` | all | proposal, reports |
 
-## Environment (`sim/`)
+## The shared environment
 
-The shared racing environment all controllers use: a Gymnasium env with the car, the tracks and the
-agreed interface (20 Hz, actions `[throttle, steering]` in [-1, 1], SI units, left positive).
+Every controller drives through the same `RacingEnv`
+([full guide, including a "start here by role" section: `sim/README.md`](sim/README.md)):
 
 ```python
 from sim import RacingEnv
@@ -37,35 +62,32 @@ obs, info = env.reset()
 obs, reward, terminated, truncated, info = env.step([throttle, steering])
 ```
 
-- How to use it (observations, car values, CasADi car for MPCC, videos): [`sim/README.md`](sim/README.md)
-- What changed from the agreed plan, plus notes for each teammate: [PR #1 description](https://github.com/wukongxzero/AI-racing-challenge/pull/1)
-- Agreed interface, timeline and change log: [`CLAUDE.md`](CLAUDE.md)
-- Try it: `python sim/examples/drive_lap.py` · tests: `python sim/tests/test_racing.py`
+Rules everyone follows (agreed by the team, see [`CLAUDE.md`](CLAUDE.md)):
+
+- **Commands:** two numbers in [-1, 1], `[throttle, steering]` (+1 = full gas / full left), sent at
+  **20 Hz** (each held 50 ms). The car limits steering to 0.42 rad and 3.2 rad/s for everyone.
+- **Units:** meters, seconds, radians; **left = positive**.
+- **Interface only:** use `RacingEnv`, `env.track`, `env.to_action` and `env.car_params`; never the
+  car's internals, so the MuJoCo car can replace the NumPy car without changing your code.
+- **Changes to shared decisions** are proposed to the whole team first and recorded in the
+  change log in `CLAUDE.md`.
 
 ## Tests
 
 GitHub runs the environment's tests automatically on every pull request and every push to `main`
-(on Python 3.12 and 3.15). The result shows on the pull request:
+(Python 3.12 and 3.15). The result shows on the pull request:
 
 - **Green check** – the shared environment still works; safe to merge.
 - **Red X** – something broke. Click **Details** next to it to see which test failed and why.
 
-Run the same tests on your computer before pushing: `python sim/tests/test_racing.py` (a few seconds).
-They cover the track math, the car physics (grip and steering limits), laps and off-track rules, the
-Gymnasium interface, the CasADi car and rendering. The workflow lives in
-[`.github/workflows/tests.yml`](.github/workflows/tests.yml); tests for your own code can be added there too.
+Run them yourself before pushing: `python sim/tests/test_racing.py`. The workflow lives in
+[`.github/workflows/tests.yml`](.github/workflows/tests.yml); tests for your own code can be added there.
 
-## Setup
+## Where to find things
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .          # once: makes `import sim` work from any folder
-```
-
-On Windows (PowerShell): `python -m venv .venv`, then `.venv\Scripts\Activate.ps1`, then `pip install -r requirements.txt` and `pip install -e .`.
-
-Why `pip install -e .`: Python only finds `sim` from the repo's top folder, so a script inside
-`controllers/`, `game/` or `eval/` would fail with "No module named 'sim'". This one-time command fixes
-that for every folder; `-e` ("editable") means it uses the live files, so `git pull` keeps it up to date.
+| What | Where |
+|---|---|
+| How to use the environment, notes for each role | [`sim/README.md`](sim/README.md) |
+| Agreed decisions, timeline, change log | [`CLAUDE.md`](CLAUDE.md) (also read by AI assistants; [`AGENTS.md`](AGENTS.md) points other AI tools there) |
+| What changed in each update | the pull requests ([#1](https://github.com/wukongxzero/AI-racing-challenge/pull/1), [#2](https://github.com/wukongxzero/AI-racing-challenge/pull/2)) |
+| Proposal and reports | [`docs/`](docs/) |
