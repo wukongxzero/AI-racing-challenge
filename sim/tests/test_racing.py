@@ -240,6 +240,20 @@ def test_info_for_ppo():
     assert info["progress_rate"] > 0
 
 
+def test_obs_matches_names():
+    """obs[i] is exactly the value env.obs_names[i] names in info (PPO depends on it)."""
+    env = RacingEnv()
+    obs, info = env.reset(options={"random_start": True}, seed=5)
+    for _ in range(30):
+        obs, _, _, _, info = env.step([0.6, 0.3])
+    for i, name in enumerate(env.obs_names):
+        if name.startswith("kappa_ahead_"):
+            want = info["kappa_ahead"][env.lookahead.index(float(name.split("_")[-1]))]
+        else:
+            want = info[name]
+        assert abs(float(obs[i]) - float(want)) < 1e-4 * (1 + abs(float(want))), name
+
+
 def test_viewer_headless():
     try:
         import pygame  # noqa: F401
@@ -296,6 +310,56 @@ def test_partial_first_lap_not_counted():
     _, info = env.reset(options={"s0": 80.0, "v0": 2.0})
     info, _, _ = _drive(env, info, 300)                      # crosses the line once
     assert env.lap == 0 and info["progress"] > env.track.length
+
+
+def test_first_lap_timed_only_from_start_line():
+    """Starting 8 m after the line, the first crossing must not count as a lap (it would
+    be a 94 % lap with a too-short time); the next full lap counts with a real time."""
+    env = RacingEnv(max_laps=1, time_limit=80, log=False)
+    _, info = env.reset(options={"s0": 8.0, "v0": 3.0})
+    info, term, _ = _drive(env, info, 3000)
+    assert term and env.lap == 1
+    assert info["progress"] > 2 * env.track.length          # it drove ~2 laps for 1 counted
+    assert 23 < env.lap_times[0] < 30                        # a full lap (~25-26 s)
+    assert env.lap_log[0]["clean"] is True
+
+
+def test_reset_options_checked_and_ranges():
+    env = RacingEnv()
+    try:
+        env.reset(options={"V0": 5.0})                       # typo must not be ignored
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("misspelled option accepted")
+    speeds = set()
+    for seed in range(20):
+        _, info = env.reset(seed=seed, options={"random_start": True, "v0": (0.5, 2.5),
+                                                "e_psi0": (-0.15, 0.15)})
+        assert 0.5 <= info["vx"] <= 2.5 and abs(info["e_psi"]) <= 0.15 + 1e-9
+        speeds.add(round(info["vx"], 6))
+    assert len(speeds) > 15                                  # really drawn each reset
+    a = env.reset(seed=3, options={"v0": (0.5, 2.5)})[0]
+    b = env.reset(seed=3, options={"v0": (0.5, 2.5)})[0]
+    assert np.array_equal(a, b)                              # and reproducible with a seed
+
+
+def test_bad_actions_and_order_rejected():
+    env = RacingEnv()
+    try:
+        env.step([0.0, 0.0])                                 # before reset
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("step before reset accepted")
+    env.reset()
+    for bad in ([float("nan"), 0.0], [0.0, float("inf")]):
+        try:
+            env.step(bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"non-finite action {bad} accepted")
 
 
 def test_random_start_seeded():
@@ -447,6 +511,189 @@ def test_casadi_car_matches_simulator():
     fe = dynamic_model(env.car_params)
     J = ca.Function("J", [x, u], [ca.jacobian(fe(x, u), ca.vertcat(x, u))])
     assert np.all(np.isfinite(np.array(J(state_from_info(info), [1.0, 0.2]))))
+
+
+def test_keyboard_teleop():
+    """Arrow keys -> standard commands: gas ramps up, brake wins, release coasts; left is
+    positive; the car still applies its own steering-rate limit; the assist only ever asks
+    for less steering."""
+    from sim.teleop import KeyboardTeleop
+    env = RacingEnv()
+    tele = KeyboardTeleop(env.car_params, throttle_ramp_time=0.3)
+    thr = [tele.action(up=True)[0] for _ in range(8)]
+    assert thr[0] < thr[1] < thr[5] == 1.0                    # ramps to full in 0.3 s
+    assert tele.action(up=True, down=True)[0] == -1.0          # brake wins
+    assert tele.action()[0] == 0.0                             # release = coast
+    assert tele.action(left=True)[1] == 1.0 and tele.action(right=True)[1] == -1.0
+    assert tele.action(left=True, right=True)[1] == 0.0
+    env.reset(options={"v0": 3.0})                             # same limiter as controllers
+    _, _, _, _, info = env.step(tele.action(left=True))
+    assert abs(info["delta"] - 3.2 * 0.05) < 1e-9
+    assert KeyboardTeleop(env.car_params).steer_assist            # on by default (play-tested)
+    assist = KeyboardTeleop(env.car_params, steer_assist=True)
+    for v in (0.0, 2.0, 5.0, 8.0):
+        s = assist.action(left=True, speed=v)[1]
+        assert 0.0 < s <= 1.0
+    assert assist.action(left=True, speed=8.0)[1] < assist.action(left=True, speed=3.0)[1]
+    strong = KeyboardTeleop(env.car_params, assist_margin=1.0)
+    weak = KeyboardTeleop(env.car_params, assist_margin=1.4)
+    s1, s2 = strong.action(left=True, speed=6.0)[1], weak.action(left=True, speed=6.0)[1]
+    assert s2 > s1 and abs(min(1.0, 1.4 * s1) - s2) < 1e-6      # margin scales the allowed steering
+    try:
+        KeyboardTeleop(steer_assist=True)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("assist without car_params accepted")
+
+
+def test_sideways_slide_slowed_by_tires():
+    """A car sliding sideways after a spin (little forward speed) is slowed by its tires at
+    about mu*g - its speed must not be turned into forward speed."""
+    import math
+    from sim.car_numpy import CarParams, NumpyCar
+    p = CarParams()
+    car = NumpyCar(p)
+    car.reset(0.0, 0.0, 0.0, vx=0.1, vy=2.0)
+    car.step(0.0, 0.0)
+    speed = math.hypot(car.state[3], car.state[4])
+    assert car.state[3] < 0.3                                    # not redirected forward
+    decel = (2.0 - speed) / p.dt                                 # ~ mu*g, never more
+    assert 0.6 * p.mu * 9.81 < decel < 1.1 * p.mu * 9.81
+    for _ in range(10):
+        car.step(0.0, 0.0)
+    assert math.hypot(car.state[3], car.state[4]) < 0.3          # comes to (nearly) a stop
+
+
+def test_understeer_gradient_matches_car():
+    """car_params['understeer_gradient'] (textbook formula) matches the simulated car in
+    steady cornering within 5 %, also with reduced friction."""
+    from sim.car_numpy import CarParams, NumpyCar
+    for mu_scale in (1.0, 0.7):
+        env = RacingEnv(mu_scale=mu_scale)
+        K = env.car_params["understeer_gradient"]
+        p = CarParams()
+        p.mu *= mu_scale
+        L = p.wheelbase
+        for v, d in ((3.0, 0.04), (5.0, 0.03)):
+            car = NumpyCar(p)
+            car.reset(0.0, 0.0, 0.0, vx=v, delta=d)
+            for _ in range(200):
+                car.step(np.clip(2.0 * (v - car.state[3]), -1, 1), d)
+            vx, r = car.state[3], car.state[5]
+            k_measured = (d - L * r / vx) / (vx * r)
+            assert abs(k_measured - K) < 0.05 * K, (mu_scale, v, k_measured, K)
+
+
+def test_car_interface():
+    """The NumPy car provides what sim/car_interface.py says every car must provide."""
+    from sim.car_interface import make_car
+    from sim.car_numpy import CarParams
+    car = make_car("numpy", CarParams())
+    for attr in ("p", "state", "reset", "step"):
+        assert hasattr(car, attr)
+    car.reset(1.0, 2.0, 0.5, vx=3.0)
+    car.step(0.5, 0.1, grass=False)
+    assert len(car.state) == 7 and all(np.isfinite(car.state))
+    try:
+        make_car("lego", CarParams())
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unknown car accepted")
+
+
+def test_braking_assist():
+    """With gas held, the braking assist brakes before a tight corner when the car is too
+    fast, lets the gas through when it isn't, and never asks for more gas than the human."""
+    from sim.teleop import KeyboardTeleop
+    env = RacingEnv()
+    tr = env.track
+    s = np.arange(0.0, tr.length, 0.1)
+    k = np.abs([tr.curvature(v) for v in s])
+    s_corner = float(s[np.argmax(k)])                          # tightest corner
+    tele = KeyboardTeleop(env.car_params, track=tr)
+    assert tele.brake_assist                                   # on when a track is given
+    fast = tele.action(up=True, speed=7.5, s=s_corner - 1.0)
+    assert fast[0] < 0                                         # brakes for the corner
+    tele.reset()
+    slow = [tele.action(up=True, speed=1.0, s=s_corner - 1.0)[0] for _ in range(8)]
+    assert slow[-1] == 1.0                                     # slow enough: full gas allowed
+    for v in (0.0, 3.0, 6.0, 8.0):
+        tele.reset()
+        human = tele.action(up=True, speed=v, s=s_corner - 3.0)[0]
+        assert human <= 1.0
+        off = KeyboardTeleop(env.car_params, track=tr, brake_assist=False)
+        assert human <= off.action(up=True, speed=v, s=s_corner - 3.0)[0] + 1e-9   # never more gas
+    assert not KeyboardTeleop(env.car_params).brake_assist     # no track -> off
+    try:
+        KeyboardTeleop(env.car_params, brake_assist=True)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("braking assist without track accepted")
+
+
+def test_viewer_close_up_follows_car():
+    """zoom > 1 draws the car bigger and keeps it in the middle of the window; text may have
+    several lines; zoom 1 still shows the whole track."""
+    try:
+        import pygame  # noqa: F401
+    except ImportError:
+        print("  (pygame not installed - skipped)")
+        return
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    from sim.viewer import TopDownView
+    env = RacingEnv()
+    _, info = env.reset(options={"s0": 40.0})
+    view = TopDownView(env.track, window=(400, 300), zoom=3.0, headless=True)
+    car = {"x": info["x"], "y": info["y"], "psi": info["psi"], "color": (255, 0, 0)}
+    view.draw([car], text="line one" + chr(10) + "line two")
+    img = view.frame()
+    red = np.argwhere((img[:, :, 0] == 255) & (img[:, :, 1] == 0) & (img[:, :, 2] == 0))
+    assert len(red) > 50                                      # car drawn big (close-up)
+    assert np.all(np.abs(red.mean(0) - [150, 200]) < 3)      # and in the window centre
+    whole = TopDownView(env.track, window=(400, 300), zoom=1.0, headless=True)
+    assert abs(view.scale - 3.0 * whole.scale) < 1e-9
+    view.set_zoom(1.0)
+    assert view.background.get_size() == (400, 300)
+
+
+def test_lap_timer():
+    """info['lap_timer'] counts the current lap and restarts at the line; NaN until a lap
+    is being timed after a mid-track start."""
+    env = RacingEnv(max_laps=1, time_limit=60, log=False)
+    _, info = env.reset()
+    assert info["lap_timer"] == 0.0
+    info, _, _ = _drive(env, info, 3000)
+    assert env.lap == 1 and 0.0 <= info["lap_timer"] < env.dt
+    _, info = env.reset(options={"s0": 50.0})
+    assert info["lap_timer"] != info["lap_timer"]            # NaN
+
+
+def test_keyboard_attempt_log(tmp_path=None):
+    """drive_keyboard --log saves every step and one row per lap, like the controllers, plus
+    the human's assist settings at every step and per lap (needed to report results)."""
+    from sim.examples.drive_keyboard import save_attempt
+    folder = str(tmp_path or os.path.dirname(__file__))
+    env = RacingEnv(max_laps=1, time_limit=60)
+    _, info = env.reset()
+    info, _, _ = _drive(env, info, 3000)
+    rows = env.steps + 1
+    assists = [(True, 1.4, True)] * (rows // 2) + [(True, 1.4, False)] * (rows - rows // 2)
+    steps = save_attempt(env, os.path.join(folder, "_human.csv"), 1, assists)
+    laps = os.path.join(folder, "_human_1_laps.csv")
+    with open(laps) as f:
+        lines = f.read().strip().splitlines()
+    assert lines[0] == "lap,lap_time,off_track_count,clean,assists" and len(lines) == 2
+    assert lines[1].endswith("changed: steer x1.4 + brake / steer x1.4")   # toggled mid-lap
+    with open(steps) as f:
+        header = f.readline().strip().split(",")
+        assert header[:4] == ["t", "x", "y", "psi"] and header[-3:] == ["steer_assist", "assist_margin", "brake_assist"]
+        assert sum(1 for _ in f) == rows
+    if tmp_path is None:
+        os.remove(steps)
+        os.remove(laps)
 
 
 def test_mujoco_placeholder():

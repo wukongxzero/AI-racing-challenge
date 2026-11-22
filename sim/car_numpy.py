@@ -20,8 +20,10 @@ Equations (dynamic model):
     r'  = (lf Fyf cos(delta) - lr Fyr) / Iz
 
 Low speed: the slip angles divide by vx, so the dynamic model breaks down near standstill.
-Below 0.3 m/s we use the kinematic bicycle (no tire slip); between 0.3 and 1 m/s we blend
-the two results; above 1 m/s it is purely dynamic.
+Below 0.3 m/s total speed we use the kinematic bicycle (no tire slip); between 0.3 and 1 m/s
+we blend the two results; above 1 m/s it is purely dynamic. Total speed (not just forward
+speed) decides, so a car sliding sideways after a spin stays in the dynamic model and is
+slowed by its tires; the kinematic model keeps only the forward speed.
 
 Known simplifications (state them in the report): no load transfer, no longitudinal tire
 slip, braking/accelerating does not reduce cornering grip, no air drag (top speed is a hard
@@ -85,10 +87,24 @@ class CarParams:
         limit; 0.89 was measured from steady circles (checked by a test)."""
         return 0.89 * self.mu * G
 
+    @property
+    def understeer_gradient(self) -> float:
+        """How much the car understeers, K (rad per m/s^2 of sideways acceleration): to drive a
+        circle of radius R at speed v the wheels need delta = L/R + K * v^2/R. Textbook formula
+        from the tires' small-slip cornering stiffness C = B*C*D per axle:
+            K = m/L * (lr/C_front - lf/C_rear).
+        Matches the simulated car within ~2 % in normal cornering (a test checks it); a bit
+        larger near the grip limit."""
+        L = self.wheelbase
+        c_front = self.B_f * self.C_f * self.mu * self.mass * G * self.lr / L
+        c_rear = self.B_r * self.C_r * self.mu * self.mass * G * self.lf / L
+        return self.mass / L * (self.lr / c_front - self.lf / c_rear)
+
     def to_dict(self):
         d = asdict(self)
         d["wheelbase"] = self.wheelbase
         d["a_lat_max"] = self.a_lat_max
+        d["understeer_gradient"] = self.understeer_gradient
         return d
 
 
@@ -183,14 +199,14 @@ class NumpyCar:
             # steering moves toward the target, at most delta_rate_max
             ddelta = max(-p.delta_rate_max, min(p.delta_rate_max, (delta_target - s[6]) / h))
 
-            # blend factor: 0 = kinematic only, 1 = dynamic only
-            lam = (vx - p.v_blend_low) / (p.v_blend_high - p.v_blend_low)
+            # blend factor from TOTAL speed: 0 = kinematic only, 1 = dynamic only
+            lam = (math.hypot(vx, s[4]) - p.v_blend_low) / (p.v_blend_high - p.v_blend_low)
             lam = min(1.0, max(0.0, lam))
 
             if lam > 0.0:
                 dyn = self._rk4(lambda z: self._dynamic(z, a, ddelta, mu), s, h)
             if lam < 1.0:
-                v = math.hypot(s[3], s[4])
+                v = max(s[3], 0.0)            # forward speed only: no tire slip, sideways is lost
                 k = self._rk4(lambda z: self._kinematic(z, a, ddelta), [s[0], s[1], s[2], v, s[6]], h)
                 beta = math.atan(p.lr / p.wheelbase * math.tan(k[4]))
                 kin = [k[0], k[1], k[2], k[3] * math.cos(beta), k[3] * math.sin(beta),

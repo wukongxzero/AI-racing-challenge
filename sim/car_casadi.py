@@ -14,10 +14,10 @@ States and inputs (SI, left positive):
 
 How this differs from the simulator (only matters at the edges):
   * delta is an input here; in the simulator it is a state that moves toward the command at
-    most 3.2 rad/s. In an MPC, add the constraint |delta_k - delta_{k-1}| <= 3.2 * dt and
-    start from info["delta"].
+    most 3.2 rad/s (delta_rate_max) and never past delta_max. The current angle is info["delta"].
   * The simulator blends to the kinematic model below 1 m/s, stops at 0 m/s (no reverse),
-    caps speed at v_max and adds grass drag off track. Keep a, delta within car_params limits.
+    caps speed at v_max, limits a to [-b_max, a_max] and adds grass drag off track
+    (values in env.car_params).
 """
 from __future__ import annotations
 

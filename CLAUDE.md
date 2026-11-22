@@ -71,7 +71,7 @@ x_c, y_c = track.point_at(s)                                  # centerline point
 ```python
 from sim import RacingEnv                     # environment code lives in sim/
 track = env.track                             # the track object of an env
-env.car_params                                # read-only dict: wheelbase, mu, a_lat_max (usable grip), v_max, a_max, b_max, delta_max, ...
+env.car_params                                # read-only dict: wheelbase, mu, a_lat_max (usable grip), understeer_gradient, v_max, a_max, b_max, delta_max, ...
 track.project(x, y, psi)                      # s_prev=None searches the whole lap (use only at start)
 track.heading(s), track.curvature(s), track.width(s)          # road direction, curvature, (w_left, w_right)
 track.lookahead(s, dists), track.heading_ahead(s, dists, psi) # curvature / road direction ahead
@@ -81,6 +81,7 @@ RacingEnv(mu_scale=0.7) or reset(options={"mu_scale": 0.7})    # less grip for r
 gymnasium.make("Racing-v0", **kwargs)        # same env through Gymnasium's registry
 RacingEnv(render_mode="rgb_array" | "human")  # pictures for videos / a live window
 from sim.video import record_episode         # save an episode as MP4 (any Python version)
+from sim.teleop import KeyboardTeleop        # arrow keys -> the same [throttle, steering] commands
 ```
 **Update (Nov 22):** `track.project` takes the car's heading `psi` – heading error can't be
 computed from position alone. `track.point_at(s)` was added so Pure Pursuit can find its
@@ -99,6 +100,14 @@ directly. `reward` is for PPO; Pavan owns its design.
 - **Control rate: 20 Hz for every controller** (command held 50 ms). Berinay confirmed.
 - Human keyboard teleop: arrow keys produce the same commands and go through the same
   limiter as the controllers.
+  Human-only input shaping (`sim/teleop.py`; part of the experimental setup, report it):
+  the throttle command ramps 0 -> full in 0.3 s while Up is held (on/off keys would
+  otherwise jerk the car; `throttle_ramp_time=0` turns it off), steering is full
+  left / right / straight, and a speed-based steering assist caps the steering request at
+  speed - ON by default (it makes driving with on/off keys much easier;
+  `steer_assist=False` turns it off). A braking assist (also ON by default; casual
+  players don't brake) cuts the gas or brakes when the car is too fast for a corner within 8 m. All of these only make the human's input gentler,
+  never stronger than what the controllers can command.
 
 ### 5.3 Observations / car state
 - Car state: position, heading, forward and sideways speed, yaw rate, current steering angle.
@@ -129,8 +138,8 @@ directly. `reward` is for PPO; Pavan owns its design.
   - Fit a smooth periodic curve through the centerline, parameterized by arc length.
   - Projection searches **near the previous progress value** so it never jumps to a nearby
     section of track.
-  - Handle lap wrap-around; a lap only counts after covering most of the track (no cheating
-    by reversing over the line).
+  - Handle lap wrap-around; a lap only counts after covering the whole track (no cheating
+    by reversing over the line). Only a start on the start line times lap 1.
   - Off track = any part of the car past the road edge (|e_c| > half-width − half car width).
   - Must also be able to give MPCC the centerline as a smooth curve usable inside CasADi.
   - Provide `track.point_at(s)` (centerline point at progress s, wrapping around the lap).
@@ -300,7 +309,7 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | `track.project` now takes the car heading: `track.project(x, y, psi, s_prev)` (heading error needs it) | Anyone calling `project` directly; `RacingEnv` passes it automatically | Yes |
 | Nov 22 | Added `track.point_at(s)` – centerline point at progress s | Nathaly (Pure Pursuit lookahead) | Yes |
 | Nov 22 | Clarified sign: lateral offset positive to the left; MPCC must flip the common contouring formula | Berinay | Yes |
-| Nov 22 | Added `env.car_params` (read-only car values: wheelbase, mu, v_max, …), incl. `a_lat_max` = usable grip ≈ 0.89·mu·g (use this, not mu·g, for speed profiles) | Nathaly (speed profile), Berinay (model) | Yes (PR #1 notes) |
+| Nov 22 | Added `env.car_params` (read-only car values: wheelbase, mu, v_max, …), incl. `a_lat_max` = sideways grip the car actually reaches ≈ 0.89·mu·g (mu·g is ~12 % higher) | Nathaly (speed profile), Berinay (model) | Yes (PR #1 notes) |
 | Nov 22 | Added optional track helpers (`heading`, `curvature`, `width`, `lookahead`, `heading_ahead`, `casadi_centerline`); `project` `s_prev` may be `None` | Everyone (optional) | Yes (PR #1 notes) |
 | Nov 22 | `info`/`obs` contents fixed (see 5.3); obs has finite bounds; added `progress_rate`, `mu_scale` option | Pavan, Nathaly | Yes (PR #1 notes) |
 | Nov 22 | NumPy car switched to the team's planned model (Pacejka tires, Liniger tire shape, mu 0.9, hard top speed, no drag); provisional speed/accel values (see 5.7) | Everyone (car behavior), Berinay (same equations as MPCC) | Yes (PR #1 notes) |
@@ -309,3 +318,12 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | Team uses `pygame-ce` instead of `pygame` (`requirements.txt` changed): same `import pygame`, installs on every Python version incl. 3.15; don't install both | Nathaly (game), anyone running the game | Yes (PR #1 notes) |
 | Nov 22 | Track CSVs and previews moved from the repo's top level into `tracks/` (the agreed layout); `RacingEnv(track="training")` finds them | Anyone loading the CSVs by path | Yes (PR #1 notes) |
 | Nov 22 | Added `sim/car_casadi.py`: the simulator's dynamic and kinematic car equations as CasADi functions (+ RK4 `discretize`, `state_from_info`); tested identical to the NumPy car | Berinay (MPCC) | Yes (PR #1 notes) |
+| Nov 22 | GitHub Actions runs the sim tests on every pull request and push to `main` (`.github/workflows/tests.yml`, Python 3.12 + 3.15); main README points to the environment docs | Everyone (PRs show a pass/fail check) | Yes (PR #2 notes) |
+| Nov 22 | Repo installable: `pip install -e .` once (new `pyproject.toml`) so `import sim` works from `controllers/`, `game/`, `eval/` scripts | Everyone | Yes (PR #2 notes) |
+| Nov 22 | Laps: only a start on the start line times lap 1 (a mid-track start no longer records a short first lap); `lap_log` has `clean`; reset options accept `(low, high)` ranges and reject misspelled names; NaN/inf actions raise an error | Pavan (training starts), Nathaly (metrics) | Yes (PR #2 notes) |
+| Nov 22 | Added keyboard teleop `sim/teleop.py` (Up gas ramp, Down brake, Left/Right steer through the car's own limiter; optional speed-based steering assist, off by default) and `sim/examples/drive_keyboard.py`. Human-only input shaping documented in 5.2 (throttle ramp 0.3 s, optional assist) | Nathaly (game), anyone driving; report it in results | Yes (PR #2 notes) |
+| Nov 22 | Car physics fix: a car sliding sideways after a spin is slowed by its tires (was instantly turned into forward speed); `car_params` adds `understeer_gradient` (textbook formula, matches the car within 2 %); `sim/car_interface.py` defines what a car must provide (MuJoCo hand-over) | Everyone (car behavior after spins), Nathaly (understeer) | Yes (PR #2 notes) |
+| Nov 22 | Teleop/viewer polish: `info["lap_timer"]` (time in the current lap); viewer close-up that follows a car (`zoom`), multi-line text; `drive_keyboard.py` reads keys without delay, starts in close-up (Z toggles), shows timing + commands, `--log` saves each attempt like the controllers' logs | Nathaly (game HUD, results), anyone driving | Yes (PR #2 notes) |
+| Nov 22 | Human steering assist ON by default (makes on/off-key driving much easier); report it as part of the human setup | Nathaly (game), results | Yes (PR #2 notes) |
+| Nov 22 | Human braking assist (on by default; B toggles): too fast for a corner within 8 m -> less gas or brake. Steering assist strength adjustable ([ / ], default x1.4). Both reported as human setup | Nathaly (game: pass `track=env.track`), results | Yes (PR #2 notes) |
+| Nov 22 | Human logs (`drive_keyboard.py --log`) record the assist settings at every step and per lap (`assists` column), so results can state exactly which assists the human used | Nathaly (results) | Yes (PR #2 notes) |

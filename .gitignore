@@ -25,3 +25,8 @@ results/
 *.out
 *.synctex.gz
 docs/references/
+
+# Outputs of the sim examples (drive_lap.py --video / --log / --plot)
+*.mp4
+run.csv
+drive_lap_*.png

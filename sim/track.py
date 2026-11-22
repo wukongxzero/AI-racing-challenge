@@ -248,8 +248,8 @@ class Track:
         """Smooth centerline as CasADi B-spline interpolants (requires `casadi`).
 
         Returns dict of casadi.Function, each mapping s (m) -> value:
-        'x', 'y', 'theta', 'kappa'. s must stay inside [s_min, s_max]
-        (default [-5, L + 20]); take s modulo L outside the solver.
+        'x', 'y', 'theta', 'kappa'. The splines cover s in [s_min, s_max] only
+        (default [-5, L + 20], i.e. one lap plus 20 m past the finish line).
         """
         try:
             import casadi as ca

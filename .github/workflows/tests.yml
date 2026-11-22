@@ -1,0 +1,30 @@
+# Runs the environment tests on every pull request and every push to main.
+# A red X on a pull request means something in sim/ broke; click "Details" to see which test.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.15"]   # teammates may use either
+    env:
+      SDL_VIDEODRIVER: dummy               # Pygame tests run without a screen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+      # Install the repo the way teammates do (pip install -e .), plus only what the sim
+      # tests need (not PyTorch / Stable-Baselines3, which are large)
+      - name: Install
+        run: pip install -e . casadi pygame-ce "imageio[ffmpeg]"
+      - name: Run sim tests
+        run: python sim/tests/test_racing.py

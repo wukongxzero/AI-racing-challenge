@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from sim import RacingEnv  # noqa: E402
 
 
-def controller(env, info, a_lat=6.0, v_cap=7.0, lookahead_time=0.35, understeer=0.012):
+def controller(env, info, a_lat=6.0, v_cap=7.0, lookahead_time=0.35):
     """Steer toward a centerline point ahead; slow down for curves ahead.
 
     Demo only - Nathaly's Pure Pursuit is the real baseline controller.
@@ -41,8 +41,8 @@ def controller(env, info, a_lat=6.0, v_cap=7.0, lookahead_time=0.35, understeer=
     px, py = c * dx + s * dy, -s * dx + c * dy          # target in the car frame
     steer = math.atan2(2.0 * p["wheelbase"] * py, px * px + py * py)
     # The car understeers (the tires slip), so it needs more steering than geometry says,
-    # more so at higher speed. 0.012 s^2/m was measured from the car's steady circles.
-    steer *= 1.0 + understeer * info["vx"] ** 2 / p["wheelbase"]
+    # more so at higher speed: delta = L/R + K*v^2/R, i.e. (1 + K*v^2/L) times the geometric angle.
+    steer *= 1.0 + p["understeer_gradient"] * info["vx"] ** 2 / p["wheelbase"]
     return env.to_action(accel, steer)
 
 

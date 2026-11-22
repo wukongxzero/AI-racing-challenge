@@ -17,7 +17,8 @@ from dataclasses import replace
 
 import numpy as np
 
-from .car_numpy import CarParams, NumpyCar
+from .car_interface import make_car
+from .car_numpy import CarParams
 from .track import Track, load_track
 
 try:  # Gymnasium is optional; the env works the same without it.
@@ -92,15 +93,11 @@ class RacingEnv(_Base):
     def __init__(self, car="numpy", track="training", off_track="grass", max_laps=None,
                  time_limit=None, lookahead=(0.5, 1.0, 1.5, 2.0, 2.5, 3.0), mu_scale=1.0,
                  reward_fn=None, off_track_penalty=1.0, car_params=None, log=True,
-                 lap_min_fraction=0.9, render_mode=None):
+                 render_mode=None):
         if render_mode not in (None, "human", "rgb_array"):
             raise ValueError(f"render_mode must be None, 'human' or 'rgb_array', not {render_mode!r}")
         self.render_mode = render_mode
         self._view = None                  # Pygame viewer, created on the first render
-        if car == "mujoco":
-            raise NotImplementedError("MuJoCo car not available yet - use car='numpy'.")
-        if car != "numpy":
-            raise ValueError(f"unknown car '{car}'")
         if off_track not in ("grass", "terminate"):
             raise ValueError("off_track must be 'grass' or 'terminate'")
 
@@ -109,9 +106,9 @@ class RacingEnv(_Base):
         self._mu_base = self._params.mu
         self.mu_scale = float(mu_scale)
         self._params.mu = self._mu_base * self.mu_scale   # also applied again at every reset
-        # The car sits behind a small internal boundary (reset / step / state),
-        # so the MuJoCo car can drop in here without changing anything else.
-        self._car = NumpyCar(self._params)
+        # The car sits behind a small boundary (sim/car_interface.py: reset / step / state),
+        # so the MuJoCo car drops in here without changing anything else.
+        self._car = make_car(car, self._params)
         self.dt = self._params.dt
         self.off_track_mode = off_track
         self.max_laps = max_laps
@@ -120,7 +117,6 @@ class RacingEnv(_Base):
         self.reward_fn = reward_fn
         self.off_track_penalty = float(off_track_penalty)
         self.log_enabled = log
-        self.lap_min_fraction = lap_min_fraction
 
         self.obs_names = OBS_NAMES + tuple(f"kappa_ahead_{d:g}" for d in self.lookahead)
         # Generous physical limits for each obs value (Gymnasium wants finite bounds).
@@ -141,6 +137,7 @@ class RacingEnv(_Base):
         self.observation_space = spaces.Box(low, high, dtype=np.float32)
         self.action_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float32)
         self._info = None
+        self._started = False             # step() before reset() is an error
 
     # ------------------------------------------------------------- public info
     @property
@@ -153,8 +150,8 @@ class RacingEnv(_Base):
         """Convert (acceleration m/s^2, steering angle rad) to [throttle, steering] in [-1, 1].
 
         Exact inverse of the command mapping: +a_max <-> +1, -b_max <-> -1,
-        +-delta_max <-> +-1. Drag, rolling resistance and grip limits are NOT
-        compensated (see car_params).
+        +-delta_max <-> +-1. The car still applies its own limits (top speed, no
+        reverse, tire grip, steering rate), so the result is not guaranteed.
         """
         p = self._params
         thr = accel / p.a_max if accel >= 0 else accel / p.b_max
@@ -166,27 +163,34 @@ class RacingEnv(_Base):
 
         options (all optional):
             s0, e_c0, e_psi0, v0   start progress (m), lateral offset (m),
-                                   heading error (rad), forward speed (m/s).
-            random_start: True     draw s0 ~ U[0, L), e_c0 ~ U(+-0.3),
-                                   e_psi0 ~ U(+-0.2), v0 ~ U[0, 3] (explicit values win).
+                                   heading error (rad), forward speed (m/s). Each may be
+                                   a number, or a (low, high) pair = drawn uniformly
+                                   at every reset, e.g. {"v0": (0.5, 2.5)}.
+            random_start: True     defaults for anything not given: s0 ~ U[0, L),
+                                   e_c0 ~ U(+-0.3), e_psi0 ~ U(+-0.2), v0 ~ U[0, 3].
             mu_scale               friction multiplier from now on (robustness tests).
-        Default: on the start line, centred, at rest (race start).
+        Default: on the start line, centred, at rest (race start). Unknown option
+        names raise an error, so a typo can't silently be ignored.
+        Laps: only a start ON the start line (s0 = 0) times its first lap; from any
+        other start the timing begins at the first start-line crossing.
         """
         super().reset(seed=seed)
         opt = dict(options or {})
+        unknown = set(opt) - self._RESET_OPTIONS
+        if unknown:
+            raise ValueError(f"unknown reset option(s) {sorted(unknown)}; "
+                             f"allowed: {sorted(self._RESET_OPTIONS)}")
         if "mu_scale" in opt:
             self.mu_scale = float(opt["mu_scale"])
         self._params.mu = self._mu_base * self.mu_scale
         if opt.get("random_start"):
-            rng = self.np_random
-            opt.setdefault("s0", float(rng.uniform(0.0, self.track.length)))
-            opt.setdefault("e_c0", float(rng.uniform(-0.3, 0.3)))
-            opt.setdefault("e_psi0", float(rng.uniform(-0.2, 0.2)))
-            opt.setdefault("v0", float(rng.uniform(0.0, 3.0)))
-        s0 = float(opt.get("s0", 0.0)) % self.track.length
-        e_c0 = float(opt.get("e_c0", 0.0))
-        e_psi0 = float(opt.get("e_psi0", 0.0))
-        v0 = float(opt.get("v0", 0.0))
+            defaults = {"s0": (0.0, self.track.length), "e_c0": (-0.3, 0.3),
+                        "e_psi0": (-0.2, 0.2), "v0": (0.0, 3.0)}
+            for k, rng_range in defaults.items():
+                opt.setdefault(k, rng_range)
+        start = {k: self._draw(opt.get(k, 0.0)) for k in ("s0", "e_c0", "e_psi0", "v0")}
+        s0 = start["s0"] % self.track.length
+        e_c0, e_psi0, v0 = start["e_c0"], start["e_psi0"], start["v0"]
 
         x, y, psi = self.track.frenet_to_cartesian(s0, e_c0, e_psi0)
         self._car.reset(x, y, psi, vx=v0)
@@ -196,11 +200,12 @@ class RacingEnv(_Base):
         self.prev_action = np.zeros(2, dtype=np.float32)
         self._s = s0
         self._progress = s0                 # unwrapped progress (m), absolute
-        # A lap counts at each start-line crossing; a first partial lap from a
-        # mid-track start (less than lap_min_fraction of L) is not counted.
+        # A lap counts at each start-line crossing (progress reaches the next multiple of
+        # L, so it must cover the whole track). Only a start on the line times lap 1;
+        # from mid-track the first crossing just starts the timing.
         L = self.track.length
         self._next_line = L
-        self._lap_counts = (L - s0) >= self.lap_min_fraction * L
+        self._lap_counts = s0 == 0.0
         self.lap = 0
         self.lap_times = []
         self.lap_log = []
@@ -209,6 +214,7 @@ class RacingEnv(_Base):
         self.off_track_count = 0
         self._off = False
         self._log = {k: [] for k in self._log_keys()} if self.log_enabled else None
+        self._started = True
 
         self._update_track_state()
         self._off = self._is_off()
@@ -221,7 +227,12 @@ class RacingEnv(_Base):
 
     # ------------------------------------------------------------------- step
     def step(self, action):
-        a = np.clip(np.asarray(action, dtype=np.float64).reshape(2), -1.0, 1.0)
+        if not self._started:
+            raise RuntimeError("call reset() before step()")
+        a = np.asarray(action, dtype=np.float64).reshape(2)
+        if not np.all(np.isfinite(a)):          # NaN / inf would silently become full throttle
+            raise ValueError(f"action must be finite, got {a.tolist()}")
+        a = np.clip(a, -1.0, 1.0)
         on_grass = self._off and self.off_track_mode == "grass"
         self._car.step(a[0], a[1] * self._params.delta_max, grass=on_grass)
         self.t += self.dt
@@ -258,6 +269,15 @@ class RacingEnv(_Base):
         return self._obs(info), reward, terminated, truncated, info
 
     # ---------------------------------------------------------------- helpers
+    _RESET_OPTIONS = {"s0", "e_c0", "e_psi0", "v0", "random_start", "mu_scale"}
+
+    def _draw(self, value):
+        """A number as is, or a (low, high) pair drawn uniformly with the env's seeded RNG."""
+        if isinstance(value, (tuple, list)):
+            low, high = value
+            return float(self.np_random.uniform(low, high))
+        return float(value)
+
     def _update_track_state(self):
         st = self._car.state
         s, e_c, e_psi, kappa = self.track.project(st[0], st[1], st[2], self._s)
@@ -293,7 +313,8 @@ class RacingEnv(_Base):
         self.lap += 1
         self.lap_times.append(lap_time)
         self.lap_log.append({"lap": self.lap, "lap_time": lap_time,
-                             "off_track_count": self._lap_off_events})
+                             "off_track_count": self._lap_off_events,
+                             "clean": self._lap_off_events == 0})   # no off-track = clean lap
         self._lap_start_t = t_cross
         self._lap_off_events = 1 if self._off else 0  # still off when crossing
         return True
@@ -317,6 +338,8 @@ class RacingEnv(_Base):
             # off track and laps
             "off_track": self._off, "off_track_count": self.off_track_count,
             "lap": self.lap, "lap_times": list(self.lap_times), "lap_completed": lap_completed,
+            # time in the current lap (s); NaN until a lap is being timed (mid-track start)
+            "lap_timer": (self.t - self._lap_start_t) if self._lap_start_t is not None else float("nan"),
             "mu_scale": self.mu_scale,
         }
         return info
