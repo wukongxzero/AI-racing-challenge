@@ -79,6 +79,20 @@ F1TENTH geometry (m 3.74 kg, Iz 0.0471, lf 0.159, lr 0.171, wheelbase 0.33 m, wi
 - Steering: 0.42 rad max, 3.2 rad/s rate. Kinematic model below 0.3 m/s, blended up to 1 m/s.
 - **Provisional:** a_max 5 m/s², brake 8 m/s², top speed 8 m/s, grass grip ×0.6 + extra drag.
 
+## CasADi car (`sim/car_casadi.py`, for MPCC)
+The simulator's own equations as CasADi functions (a test checks they give identical numbers):
+
+```python
+from sim.car_casadi import dynamic_model, kinematic_model, discretize, state_from_info
+f = dynamic_model(env.car_params)     # xdot = f(x, u); x = [X, Y, psi, vx, vy, r], u = [a, delta]
+fk = kinematic_model(env.car_params)  # x = [X, Y, psi, v], u = [a, delta]
+F = discretize(f, dt=0.05)            # x_next = F(x, u): one 50 ms step (RK4, 10 sub-steps like the sim)
+x0 = state_from_info(info)            # current state from the env
+```
+Steering is an input here but rate-limited in the simulator: add |δ_k − δ_(k−1)| ≤ 3.2·dt and start
+from `info["delta"]`. Below 1 m/s the simulator blends to the kinematic model. Measured on one laptop:
+IPOPT solves a simple tracking MPC with this model in ~18 ms (1 s horizon) / ~33 ms (2 s) warm-started.
+
 ## Videos (`sim/video.py`)
 `record_episode(env, act, "lap.mp4")` runs one episode with `act(obs, info) -> action` and saves
 an MP4 (20 fps = real time); the env needs `render_mode="rgb_array"`. Needs `imageio[ffmpeg]`.

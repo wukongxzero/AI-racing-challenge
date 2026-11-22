@@ -405,6 +405,50 @@ def test_record_episode_video(tmp_path=None):
         os.remove(path)
 
 
+def test_casadi_car_matches_simulator():
+    """The CasADi car (for MPCC) gives the same numbers as the simulator: same derivatives
+    at random states, and the same 50 ms step (above the low-speed blend zone)."""
+    try:
+        import casadi as ca
+    except ImportError:
+        print("  (casadi not installed - skipped)")
+        return
+    from sim.car_casadi import discretize, dynamic_model, kinematic_model, state_from_info
+    from sim.car_numpy import CarParams, NumpyCar
+    rng = np.random.default_rng(0)
+    p = CarParams()
+    car = NumpyCar(p)
+    f, fk = dynamic_model(p), kinematic_model(p)
+    for _ in range(300):
+        x = [rng.uniform(-20, 20), rng.uniform(-20, 20), rng.uniform(-3, 3),
+             rng.uniform(0.5, 8), rng.uniform(-2, 2), rng.uniform(-4, 4)]
+        a, d = rng.uniform(-8, 5), rng.uniform(-0.42, 0.42)
+        num = np.array(car._dynamic(x + [d], a, 0.0, p.mu)[:6])
+        assert np.allclose(np.array(f(x, [a, d])).ravel(), num, rtol=1e-10, atol=1e-10)
+        numk = np.array(car._kinematic(x[:4] + [d], a, 0.0)[:4])
+        assert np.allclose(np.array(fk(x[:4], [a, d])).ravel(), numk, rtol=1e-10, atol=1e-10)
+    F = discretize(f, dt=p.dt, substeps=p.substeps)
+    for _ in range(100):
+        d, thr = rng.uniform(-0.42, 0.42), rng.uniform(-0.3, 1.0)
+        x0 = [0.0, 0.0, rng.uniform(-3, 3), rng.uniform(1.5, 7.0), rng.uniform(-0.5, 0.5),
+              rng.uniform(-2, 2)]
+        car.reset(*x0, delta=d)
+        car.step(thr, d)                              # steering already at its target
+        if not (1.0 < car.state[3] < p.v_max):
+            continue                                  # blend zone / top-speed cap: not compared
+        a = thr * (p.a_max if thr >= 0 else p.b_max)
+        nxt = np.array(F(x0, [a, d])).ravel()
+        nxt[2] = (nxt[2] + np.pi) % (2 * np.pi) - np.pi
+        assert np.allclose(nxt, car.state[:6], atol=1e-9)
+    # takes env.car_params (incl. mu_scale) and gives finite gradients for the optimizer
+    env = RacingEnv(mu_scale=0.7)
+    _, info = env.reset(options={"v0": 4.0})
+    x, u = ca.SX.sym("x", 6), ca.SX.sym("u", 2)
+    fe = dynamic_model(env.car_params)
+    J = ca.Function("J", [x, u], [ca.jacobian(fe(x, u), ca.vertcat(x, u))])
+    assert np.all(np.isfinite(np.array(J(state_from_info(info), [1.0, 0.2]))))
+
+
 def test_mujoco_placeholder():
     try:
         RacingEnv(car="mujoco")

@@ -76,6 +76,7 @@ track.project(x, y, psi)                      # s_prev=None searches the whole l
 track.heading(s), track.curvature(s), track.width(s)          # road direction, curvature, (w_left, w_right)
 track.lookahead(s, dists), track.heading_ahead(s, dists, psi) # curvature / road direction ahead
 track.casadi_centerline()                     # CasADi B-splines x(s), y(s), theta(s), kappa(s) for MPCC
+sim.car_casadi.dynamic_model(env.car_params)  # the car's own equations in CasADi (+ kinematic_model, discretize)
 RacingEnv(mu_scale=0.7) or reset(options={"mu_scale": 0.7})    # less grip for robustness tests
 gymnasium.make("Racing-v0", **kwargs)        # same env through Gymnasium's registry
 RacingEnv(render_mode="rgb_array" | "human")  # pictures for videos / a live window
@@ -307,3 +308,4 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | Added `render_mode` ("rgb_array" for videos, "human" window), `gym.make("Racing-v0")` (via it `check_env` passes all checks with zero warnings), `sim.video.record_episode` for MP4s; `requirements.txt` + `imageio[ffmpeg]`. Gymnasium's `RecordVideo` needs `moviepy`, which can't install on Python 3.15 | Pavan (videos, check_env), Nathaly | Yes (PR #1 notes) |
 | Nov 22 | Team uses `pygame-ce` instead of `pygame` (`requirements.txt` changed): same `import pygame`, installs on every Python version incl. 3.15; don't install both | Nathaly (game), anyone running the game | Yes (PR #1 notes) |
 | Nov 22 | Track CSVs and previews moved from the repo's top level into `tracks/` (the agreed layout); `RacingEnv(track="training")` finds them | Anyone loading the CSVs by path | Yes (PR #1 notes) |
+| Nov 22 | Added `sim/car_casadi.py`: the simulator's dynamic and kinematic car equations as CasADi functions (+ RK4 `discretize`, `state_from_info`); tested identical to the NumPy car | Berinay (MPCC) | In PR #1 notes once pushed |
