@@ -1,8 +1,9 @@
 numpy
 scipy
 matplotlib
-pygame
+pygame-ce
 gymnasium
 stable-baselines3
 casadi
 tensorboard
+imageio[ffmpeg]
