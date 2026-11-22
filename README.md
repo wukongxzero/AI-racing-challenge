@@ -65,3 +65,7 @@ pip install -e .          # once: makes `import sim` work from any folder
 ```
 
 On Windows (PowerShell): `python -m venv .venv`, then `.venv\Scripts\Activate.ps1`, then `pip install -r requirements.txt` and `pip install -e .`.
+
+Why `pip install -e .`: Python only finds `sim` from the repo's top folder, so a script inside
+`controllers/`, `game/` or `eval/` would fail with "No module named 'sim'". This one-time command fixes
+that for every folder; `-e` ("editable") means it uses the live files, so `git pull` keeps it up to date.
