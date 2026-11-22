@@ -25,9 +25,8 @@ pip install -r requirements.txt
 pip install -e .                   # once: makes `import sim` work from any folder
 ```
 
-Why `pip install -e .`: Python only finds `sim` from the repo's top folder, so a script inside
-`controllers/`, `game/` or `eval/` would fail with "No module named 'sim'". This one-time command fixes
-that for every folder; `-e` ("editable") means it uses the live files, so `git pull` keeps it up to date.
+Without `pip install -e .`, scripts in `controllers/`, `game/` or `eval/` fail with "No module named
+'sim'". It uses the live files, so `git pull` keeps it up to date.
 
 Try it:
 
@@ -74,14 +73,9 @@ Rules everyone follows (agreed by the team, see [`CLAUDE.md`](CLAUDE.md)):
 
 ## Tests
 
-GitHub runs the environment's tests automatically on every pull request and every push to `main`
-(Python 3.12 and 3.15). The result shows on the pull request:
-
-- **Green check** – the shared environment still works; safe to merge.
-- **Red X** – something broke. Click **Details** next to it to see which test failed and why.
-
-Run them yourself before pushing: `python sim/tests/test_racing.py`. The workflow lives in
-[`.github/workflows/tests.yml`](.github/workflows/tests.yml); tests for your own code can be added there.
+GitHub runs the environment's tests on every pull request (Python 3.12 and 3.15): a **green check**
+means the shared environment still works; a **red X** means something broke (**Details** shows which
+test). Locally: `python sim/tests/test_racing.py`. Workflow: [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
 
 ## Where to find things
 
