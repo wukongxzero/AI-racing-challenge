@@ -14,8 +14,7 @@ Keys:
     none    coast (throttle 0)
     Left / Right   full steering command left / right; release = straight.
 
-Human-only assists (both ON by default - play-testing showed the car is hard to drive with
-on/off keys without them). They only ever REDUCE the human's input (less steering, less gas,
+Human-only assists (both ON by default - they make driving with on/off keys much easier). They only ever REDUCE the human's input (less steering, less gas,
 more braking), never ask for more than the controllers can command. Report them in results.
 
 Steering assist (steer_assist): at speed, a full Left/Right asks only for assist_margin x the

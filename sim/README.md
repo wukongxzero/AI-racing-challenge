@@ -176,7 +176,7 @@ action = teleop.action_from_pygame(speed=info["vx"], s=info["s"])   # same [thro
 The human goes through the same car limits as every controller. **Human-only input shaping (report
 it in results):** gas ramps up over 0.3 s so on/off keys don't jerk the car (`throttle_ramp_time=0`
 turns it off); steering is full left / right / straight; the steering assist (**on by default**:
-play-testing showed the car isn't drivable with on/off keys without it) caps the steering request at
+it makes driving with on/off keys much easier) caps the steering request at
 speed to `assist_margin` × the angle the tires can use (default ×1.4, being tuned by play-testing);
 the braking assist (**on by default** when the track is given: casual players don't brake) looks 8 m
 ahead and cuts the gas or brakes when the car is too fast for a corner, planning corners at
