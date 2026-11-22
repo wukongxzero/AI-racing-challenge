@@ -603,6 +603,37 @@ def test_car_interface():
         raise AssertionError("unknown car accepted")
 
 
+def test_braking_assist():
+    """With gas held, the braking assist brakes before a tight corner when the car is too
+    fast, lets the gas through when it isn't, and never asks for more gas than the human."""
+    from sim.teleop import KeyboardTeleop
+    env = RacingEnv()
+    tr = env.track
+    s = np.arange(0.0, tr.length, 0.1)
+    k = np.abs([tr.curvature(v) for v in s])
+    s_corner = float(s[np.argmax(k)])                          # tightest corner
+    tele = KeyboardTeleop(env.car_params, track=tr)
+    assert tele.brake_assist                                   # on when a track is given
+    fast = tele.action(up=True, speed=7.5, s=s_corner - 1.0)
+    assert fast[0] < 0                                         # brakes for the corner
+    tele.reset()
+    slow = [tele.action(up=True, speed=1.0, s=s_corner - 1.0)[0] for _ in range(8)]
+    assert slow[-1] == 1.0                                     # slow enough: full gas allowed
+    for v in (0.0, 3.0, 6.0, 8.0):
+        tele.reset()
+        human = tele.action(up=True, speed=v, s=s_corner - 3.0)[0]
+        assert human <= 1.0
+        off = KeyboardTeleop(env.car_params, track=tr, brake_assist=False)
+        assert human <= off.action(up=True, speed=v, s=s_corner - 3.0)[0] + 1e-9   # never more gas
+    assert not KeyboardTeleop(env.car_params).brake_assist     # no track -> off
+    try:
+        KeyboardTeleop(env.car_params, brake_assist=True)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("braking assist without track accepted")
+
+
 def test_viewer_close_up_follows_car():
     """zoom > 1 draws the car bigger and keeps it in the middle of the window; text may have
     several lines; zoom 1 still shows the whole track."""

@@ -6,7 +6,8 @@
     python sim/examples/drive_keyboard.py --log human.csv  # save each attempt for the results
 
 Keys: Up = gas, Down = brake, Left/Right = steer, Z = close-up / whole track,
-      A = steering assist on/off, [ / ] = assist weaker / stronger, R = restart, Esc = quit.
+      A = steering assist on/off, [ / ] = steering assist weaker / stronger,
+      B = braking assist on/off (brakes for you before corners), R = restart, Esc = quit.
 Same car, same limits and the same 20 Hz commands as every controller; off track the car
 slows on the grass and the event is counted. With --log, every attempt (ended by R or Esc)
 is saved as <name>_<n>.csv (every step, same format as env.save_log) and <name>_<n>_laps.csv
@@ -40,16 +41,17 @@ def save_attempt(env, log_path, n):
 
 
 def hud(info, env, teleop, action, zoom):
-    """Two lines of driver info: timing on top, what the car is being told below."""
+    """Driver info: timing, then what the car is being told and the assists, then the keys."""
     fmt = lambda v: f"{v:5.2f} s" if v == v else "  -  "            # NaN -> "-"
     last = env.lap_times[-1] if env.lap_times else float("nan")
     best = min(env.lap_times) if env.lap_times else float("nan")
     line1 = (f"lap {info['lap'] + 1}   time {fmt(info['lap_timer'])}   last {fmt(last)}   "
              f"best {fmt(best)}   v {info['vx']:4.1f} m/s")
     line2 = (f"gas {action[0]:+.2f}  steer {action[1]:+.2f}   off-track {info['off_track_count']}   "
-             f"assist {'ON x' + format(teleop.assist_margin, '.1f') if teleop.steer_assist else 'off'}   "
-             f"[Z] view  [A] assist  [R] restart  [Esc] quit")
-    return line1 + "\n" + line2
+             f"steer assist {'ON x' + format(teleop.assist_margin, '.1f') if teleop.steer_assist else 'off'}   "
+             f"brake assist {'ON' if teleop.brake_assist else 'off'}")
+    line3 = "[Z] view  [A] steer assist  [ ] strength  [B] brake assist  [R] restart  [Esc] quit"
+    return line1 + "\n" + line2 + "\n" + line3
 
 
 def main():
@@ -65,7 +67,7 @@ def main():
     p = env.car_params
     view = TopDownView(env.track, car_length=p["length"], car_width=p["width"], zoom=CLOSE_UP,
                        caption="RacingEnv - arrow keys to drive")
-    teleop = KeyboardTeleop(p, steer_assist=not args.no_assist)   # assist on by default
+    teleop = KeyboardTeleop(p, track=env.track, steer_assist=not args.no_assist)   # assists on
     obs, info = env.reset()
     attempt = 1
     action = teleop.action()
@@ -86,6 +88,8 @@ def main():
             teleop.reset()
         if pressed(pygame.K_a):
             teleop.steer_assist = not teleop.steer_assist
+        if pressed(pygame.K_b):
+            teleop.brake_assist = not teleop.brake_assist
         if pressed(pygame.K_LEFTBRACKET):                          # weaker assist = more steering
             teleop.assist_margin = round(teleop.assist_margin + 0.1, 1)
         if pressed(pygame.K_RIGHTBRACKET):                         # stronger, but never below x1.0
@@ -95,7 +99,7 @@ def main():
         prev_keys = keys
 
         # one 50 ms step: keys -> same command format as the controllers -> env.step
-        action = teleop.action_from_pygame(info["vx"])
+        action = teleop.action_from_pygame(info["vx"], s=info["s"])
         obs, reward, terminated, truncated, info = env.step(action)
         if info["lap_completed"]:
             lap = env.lap_log[-1]

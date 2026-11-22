@@ -161,7 +161,8 @@ Gymnasium's `RecordVideo` wrapper also works with `render_mode="rgb_array"`, but
 
 ## Keyboard teleop (`sim/teleop.py`)
 Drive it yourself: `python sim/examples/drive_keyboard.py` (Up = gas, Down = brake, Left/Right = steer,
-Z = close-up / whole track, A = steering assist, [ / ] = assist weaker / stronger, R = restart, Esc = quit). It starts in a 3× close-up
+Z = close-up / whole track, A = steering assist, [ / ] = assist weaker / stronger, B = braking assist,
+R = restart, Esc = quit). It starts in a 3× close-up
 that follows the car; the screen shows lap time, last and best lap, speed, and the gas and steering
 commands being sent. Keys are read right before each step (no extra delay). `--log human.csv` saves
 every attempt as `human_<n>.csv` (every step) and `human_<n>_laps.csv` (lap times, clean), the same
@@ -169,14 +170,18 @@ data the controllers produce. For the game:
 
 ```python
 from sim.teleop import KeyboardTeleop
-teleop = KeyboardTeleop(env.car_params)                 # steering assist on (steer_assist=False: off)
-action = teleop.action_from_pygame(speed=info["vx"])    # same [throttle, steering] as the controllers
+teleop = KeyboardTeleop(env.car_params, track=env.track)   # both assists on (see below)
+action = teleop.action_from_pygame(speed=info["vx"], s=info["s"])   # same [throttle, steering] as controllers
 ```
 The human goes through the same car limits as every controller. **Human-only input shaping (report
 it in results):** gas ramps up over 0.3 s so on/off keys don't jerk the car (`throttle_ramp_time=0`
 turns it off); steering is full left / right / straight; the steering assist (**on by default**:
 play-testing showed the car isn't drivable with on/off keys without it) caps the steering request at
-speed to `assist_margin` × the angle the tires can use (default ×1.4, being tuned by play-testing). All of these only make the
+speed to `assist_margin` × the angle the tires can use (default ×1.4, being tuned by play-testing);
+the braking assist (**on by default** when the track is given: casual players don't brake) looks 8 m
+ahead and cuts the gas or brakes when the car is too fast for a corner, planning corners at
+`brake_margin` = 0.5 of the usable grip (a simulated gas-always-held driver then laps with no
+off-track). All of these only make the
 human's input gentler, never stronger than what controllers can command.
 
 ## Viewer (`sim/viewer.py`)
