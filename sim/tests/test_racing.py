@@ -319,7 +319,10 @@ def test_gymnasium_api():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         check_env(env, skip_render_check=True)
-    assert not caught, [str(w.message) for w in caught]       # zero warnings (Pavan's plan)
+    # zero warnings from Gymnasium's checker about our env (Pavan's plan); unrelated
+    # warnings, e.g. deprecation notices in other Gymnasium versions, are ignored
+    ours = [str(w.message) for w in caught if "WARN" in str(w.message)]
+    assert not ours, ours
     venv = gym.vector.SyncVectorEnv([lambda: RacingEnv(off_track="terminate", time_limit=5,
                                                        log=False)] * 2)
     obs, _ = venv.reset(seed=0)

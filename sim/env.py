@@ -116,15 +116,19 @@ class RacingEnv(_Base):
         self.obs_names = OBS_NAMES + tuple(f"kappa_ahead_{d:g}" for d in self.lookahead)
         # Generous physical limits for each obs value (Gymnasium wants finite bounds).
         # Values are clipped to them; only absurd states (e.g. 1 km off track) get clipped.
-        p, L = self._params, self.track.length
-        limits = {"x": 1000.0, "y": 1000.0, "psi": np.pi, "vx": p.v_max, "vy": 20.0,
-                  "yaw_rate": 50.0, "delta": p.delta_max, "s": L, "e_c": 50.0, "e_psi": np.pi,
-                  "kappa": 10.0, "w_left": 10.0, "w_right": 10.0,
-                  "prev_throttle": 1.0, "prev_steer": 1.0}
+        p, L, tr = self._params, self.track.length, self.track
+        # vx gets 50 % headroom above v_max (another car might overshoot it slightly);
+        # x, y: the track's own area plus 1 km on every side.
+        limits = {"psi": np.pi, "vx": 1.5 * p.v_max, "vy": 20.0, "yaw_rate": 50.0,
+                  "delta": p.delta_max, "s": L, "e_c": 50.0, "e_psi": np.pi, "kappa": 10.0,
+                  "w_left": 10.0, "w_right": 10.0, "prev_throttle": 1.0, "prev_steer": 1.0}
         high = np.array([limits.get(k, 10.0) for k in self.obs_names], dtype=np.float32)  # kappa_ahead: 10
         low = -high
         for k in ("vx", "s", "w_left", "w_right"):           # these are never negative
             low[self.obs_names.index(k)] = 0.0
+        for k, pts in (("x", tr.x_knots), ("y", tr.y_knots)):
+            i = self.obs_names.index(k)
+            low[i], high[i] = pts.min() - 1000.0, pts.max() + 1000.0
         self.observation_space = spaces.Box(low, high, dtype=np.float32)
         self.action_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float32)
         self._info = None
