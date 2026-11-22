@@ -53,7 +53,7 @@ Environment milestones inside that:
 ## 4. Tech stack
 
 Python · NumPy/SciPy · Gymnasium (env API) · Pygame (top-down 2D game and keyboard;
-on Python 3.15 install `pygame-ce` – same `import pygame`, official pygame has no wheel) ·
+the team uses `pygame-ce` – community edition, same `import pygame`, installs on every Python version) ·
 MuJoCo (final physics engine) · CasADi + IPOPT (MPCC) · Stable-Baselines3 (PPO).
 
 ## 5. Agreed decisions (the interface)
@@ -294,5 +294,5 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | Added optional track helpers (`heading`, `curvature`, `width`, `lookahead`, `heading_ahead`, `casadi_centerline`); `project` `s_prev` may be `None` | Everyone (optional) | No – message drafted |
 | Nov 22 | `info`/`obs` contents fixed (see 5.3); added `progress_rate`, `mu_scale` option | Pavan, Nathaly | No – message drafted |
 | Nov 22 | NumPy car is all-wheel drive; provisional speed/accel values (see 5.7) | Everyone (car behavior) | No – message drafted |
-| Nov 22 | Pygame on Python 3.15 → install `pygame-ce` | Nathaly, anyone running the game | No – message drafted |
+| Nov 22 | Team uses `pygame-ce` instead of `pygame` (`requirements.txt` changed): same `import pygame`, installs on every Python version incl. 3.15; don't install both | Nathaly (game), anyone running the game | No – message drafted |
 | Nov 22 | Track CSVs and previews moved from the repo's top level into `tracks/` (the agreed layout); `RacingEnv(track="training")` finds them | Anyone loading the CSVs by path | No – message drafted |

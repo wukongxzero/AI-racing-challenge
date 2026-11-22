@@ -22,7 +22,7 @@ python sim/examples/drive_lap.py --no-view --plot --log run.csv
 python sim/tests/test_racing.py
 ```
 
-Install: `pip install -r requirements.txt` from the repo root. On Python 3.15 the `pygame` line fails to build; install `pip install pygame-ce` instead (same `import pygame`).
+Install: `pip install -r requirements.txt` from the repo root. The team uses `pygame-ce` (community edition of pygame, same `import pygame`); it installs on every Python version. Don't install regular `pygame` in the same Python.
 
 ## Environment
 - `car`: `"numpy"` now; `"mujoco"` later behind the same interface.
