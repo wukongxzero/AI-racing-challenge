@@ -71,7 +71,7 @@ x_c, y_c = track.point_at(s)                                  # centerline point
 ```python
 from sim import RacingEnv                     # environment code lives in sim/
 track = env.track                             # the track object of an env
-env.car_params                                # read-only dict: wheelbase, mu, v_max, a_max, b_max, delta_max, ...
+env.car_params                                # read-only dict: wheelbase, mu, a_lat_max (usable grip), v_max, a_max, b_max, delta_max, ...
 track.project(x, y, psi)                      # s_prev=None searches the whole lap (use only at start)
 track.heading(s), track.curvature(s), track.width(s)          # road direction, curvature, (w_left, w_right)
 track.lookahead(s, dists), track.heading_ahead(s, dists, psi) # curvature / road direction ahead
@@ -296,9 +296,9 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | `track.project` now takes the car heading: `track.project(x, y, psi, s_prev)` (heading error needs it) | Anyone calling `project` directly; `RacingEnv` passes it automatically | Yes |
 | Nov 22 | Added `track.point_at(s)` – centerline point at progress s | Nathaly (Pure Pursuit lookahead) | Yes |
 | Nov 22 | Clarified sign: lateral offset positive to the left; MPCC must flip the common contouring formula | Berinay | Yes |
-| Nov 22 | Added `env.car_params` (read-only car values: wheelbase, mu, v_max, …) | Nathaly (speed profile), Berinay (model) | No – message drafted |
+| Nov 22 | Added `env.car_params` (read-only car values: wheelbase, mu, v_max, …), incl. `a_lat_max` = usable grip ≈ 0.89·mu·g (use this, not mu·g, for speed profiles) | Nathaly (speed profile), Berinay (model) | No – message drafted |
 | Nov 22 | Added optional track helpers (`heading`, `curvature`, `width`, `lookahead`, `heading_ahead`, `casadi_centerline`); `project` `s_prev` may be `None` | Everyone (optional) | No – message drafted |
-| Nov 22 | `info`/`obs` contents fixed (see 5.3); added `progress_rate`, `mu_scale` option | Pavan, Nathaly | No – message drafted |
+| Nov 22 | `info`/`obs` contents fixed (see 5.3); obs has finite bounds (`check_env` passes with zero warnings); added `progress_rate`, `mu_scale` option | Pavan, Nathaly | No – message drafted |
 | Nov 22 | NumPy car switched to the team's planned model (Pacejka tires, Liniger tire shape, mu 0.9, hard top speed, no drag); provisional speed/accel values (see 5.7) | Everyone (car behavior), Berinay (same equations as MPCC) | No – message drafted |
 | Nov 22 | Proposed: NumPy car is the fallback final car instead of a no-contact MuJoCo backup (see 5.7, 7) | Everyone (plan) | No – message drafted (needs team OK) |
 | Nov 22 | Team uses `pygame-ce` instead of `pygame` (`requirements.txt` changed): same `import pygame`, installs on every Python version incl. 3.15; don't install both | Nathaly (game), anyone running the game | No – message drafted |

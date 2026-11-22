@@ -40,7 +40,8 @@ Install: `pip install -r requirements.txt` from the repo root. The team uses `py
 - `log=False` turns off per-step logging for fast training.
 
 ## Observation and info
-`env.obs_names` gives the order of the float32 obs vector:
+`env.obs_names` gives the order of the float32 obs vector (finite bounds, so `check_env`
+passes with zero warnings):
 `x, y, psi, vx, vy, yaw_rate, delta, s, e_c, e_psi, kappa, w_left, w_right,
 prev_throttle, prev_steer, kappa_ahead_0.5 … kappa_ahead_3`.
 `info` has the same values by name plus `t, heading_ahead` (road direction ahead relative to
@@ -64,7 +65,8 @@ in arc length; `length` = lap length.
 The team's planned dynamic bicycle model (equations at the top of `sim/car_numpy.py`),
 F1TENTH geometry (m 3.74 kg, Iz 0.0471, lf 0.159, lr 0.171, wheelbase 0.33 m, width 0.31 m).
 - Tires: Pacejka formula, curve shape from Liniger et al. (2015), peak force = mu × axle load,
-  mu = 0.9. Max sideways grip ≈ 0.8 g. The car **understeers**: it needs more steering than
+  mu = 0.9. Usable sideways grip `a_lat_max` ≈ 7.9 m/s² (0.89·mu·g; it follows `mu_scale`) –
+  use this, not mu·g, for speed profiles, and keep a margin. The car **understeers**: it needs more steering than
   the geometry says, more so at speed (the example controller compensates).
 - Acceleration is applied directly (`to_action` is exact), hard top speed, no reverse,
   no air drag. Braking doesn't reduce cornering grip (known simplification).

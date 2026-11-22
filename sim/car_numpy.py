@@ -75,9 +75,17 @@ class CarParams:
     def wheelbase(self) -> float:
         return self.lf + self.lr
 
+    @property
+    def a_lat_max(self) -> float:
+        """Usable sideways grip (m/s^2): the most the car reaches in steady cornering.
+        Below mu*g because the soft tires don't reach their peak within the steering
+        limit; 0.89 was measured from steady circles (checked by a test)."""
+        return 0.89 * self.mu * G
+
     def to_dict(self):
         d = asdict(self)
         d["wheelbase"] = self.wheelbase
+        d["a_lat_max"] = self.a_lat_max
         return d
 
 

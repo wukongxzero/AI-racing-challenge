@@ -207,6 +207,27 @@ def test_mu_scale():
     assert abs(env.car_params["mu"] - base) < 1e-12
 
 
+def test_a_lat_max_matches_car():
+    """car_params['a_lat_max'] (usable grip) matches what the car reaches in steady
+    cornering, within 5 %, also with reduced friction. Uses the car alone (no track,
+    so no grass)."""
+    from sim.car_numpy import CarParams, NumpyCar
+    for mu_scale in (1.0, 0.7):
+        params = CarParams()
+        params.mu *= mu_scale
+        best = 0.0
+        for v in (5.0, 7.0):
+            for steer in (0.3, 0.42):
+                car = NumpyCar(params)
+                car.reset(0.0, 0.0, 0.0, vx=v)
+                for _ in range(120):               # hold speed, constant steering
+                    car.step(np.clip(2.0 * (v - car.state[3]), -1, 1), steer)
+                best = max(best, car.state[3] * car.state[5])
+        a = params.a_lat_max
+        assert abs(best - a) < 0.05 * a, (mu_scale, best, a)
+    assert abs(RacingEnv(mu_scale=0.7).car_params["a_lat_max"] - 0.7 * CarParams().a_lat_max) < 1e-9
+
+
 def test_info_for_ppo():
     env = RacingEnv()
     obs, info = env.reset()
@@ -292,9 +313,13 @@ def test_gymnasium_api():
     except ImportError:
         print("  (gymnasium not installed - skipped)")
         return
+    import warnings
     env = RacingEnv(off_track="terminate", time_limit=30)
     assert isinstance(env, gym.Env)
-    check_env(env, skip_render_check=True)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        check_env(env, skip_render_check=True)
+    assert not caught, [str(w.message) for w in caught]       # zero warnings (Pavan's plan)
     venv = gym.vector.SyncVectorEnv([lambda: RacingEnv(off_track="terminate", time_limit=5,
                                                        log=False)] * 2)
     obs, _ = venv.reset(seed=0)
