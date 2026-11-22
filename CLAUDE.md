@@ -81,6 +81,7 @@ RacingEnv(mu_scale=0.7) or reset(options={"mu_scale": 0.7})    # less grip for r
 gymnasium.make("Racing-v0", **kwargs)        # same env through Gymnasium's registry
 RacingEnv(render_mode="rgb_array" | "human")  # pictures for videos / a live window
 from sim.video import record_episode         # save an episode as MP4 (any Python version)
+from sim.teleop import KeyboardTeleop        # arrow keys -> the same [throttle, steering] commands
 ```
 **Update (Nov 22):** `track.project` takes the car's heading `psi` – heading error can't be
 computed from position alone. `track.point_at(s)` was added so Pure Pursuit can find its
@@ -312,3 +313,4 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | GitHub Actions runs the sim tests on every pull request and push to `main` (`.github/workflows/tests.yml`, Python 3.12 + 3.15); main README points to the environment docs | Everyone (PRs show a pass/fail check) | Yes (PR #2 notes) |
 | Nov 22 | Repo installable: `pip install -e .` once (new `pyproject.toml`) so `import sim` works from `controllers/`, `game/`, `eval/` scripts | Everyone | Yes (PR #2 notes) |
 | Nov 22 | Laps: only a start on the start line times lap 1 (a mid-track start no longer records a short first lap); `lap_log` has `clean`; reset options accept `(low, high)` ranges and reject misspelled names; NaN/inf actions raise an error | Pavan (training starts), Nathaly (metrics) | Yes (PR #2 notes) |
+| Nov 22 | Added keyboard teleop `sim/teleop.py` (Up gas ramp, Down brake, Left/Right steer through the car's own limiter; optional speed-based steering assist, off by default) and `sim/examples/drive_keyboard.py` | Nathaly (game), anyone driving | Pending (next PR) |

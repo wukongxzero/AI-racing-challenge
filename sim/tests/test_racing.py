@@ -513,6 +513,35 @@ def test_casadi_car_matches_simulator():
     assert np.all(np.isfinite(np.array(J(state_from_info(info), [1.0, 0.2]))))
 
 
+def test_keyboard_teleop():
+    """Arrow keys -> standard commands: gas ramps up, brake wins, release coasts; left is
+    positive; the car still applies its own steering-rate limit; the assist only ever asks
+    for less steering."""
+    from sim.teleop import KeyboardTeleop
+    env = RacingEnv()
+    tele = KeyboardTeleop(env.car_params, throttle_ramp_time=0.3)
+    thr = [tele.action(up=True)[0] for _ in range(8)]
+    assert thr[0] < thr[1] < thr[5] == 1.0                    # ramps to full in 0.3 s
+    assert tele.action(up=True, down=True)[0] == -1.0          # brake wins
+    assert tele.action()[0] == 0.0                             # release = coast
+    assert tele.action(left=True)[1] == 1.0 and tele.action(right=True)[1] == -1.0
+    assert tele.action(left=True, right=True)[1] == 0.0
+    env.reset(options={"v0": 3.0})                             # same limiter as controllers
+    _, _, _, _, info = env.step(tele.action(left=True))
+    assert abs(info["delta"] - 3.2 * 0.05) < 1e-9
+    assist = KeyboardTeleop(env.car_params, steer_assist=True)
+    for v in (0.0, 2.0, 5.0, 8.0):
+        s = assist.action(left=True, speed=v)[1]
+        assert 0.0 < s <= 1.0
+    assert assist.action(left=True, speed=8.0)[1] < assist.action(left=True, speed=3.0)[1]
+    try:
+        KeyboardTeleop(steer_assist=True)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("assist without car_params accepted")
+
+
 def test_mujoco_placeholder():
     try:
         RacingEnv(car="mujoco")

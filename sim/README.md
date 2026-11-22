@@ -106,6 +106,20 @@ an MP4 (20 fps = real time); the env needs `render_mode="rgb_array"`. Needs `ima
 Gymnasium's `RecordVideo` wrapper also works with `render_mode="rgb_array"`, but it needs
 `moviepy`, which can't be installed on Python 3.15 (it requires an old `pillow`).
 
+## Keyboard teleop (`sim/teleop.py`)
+Drive it yourself: `python sim/examples/drive_keyboard.py` (Up = gas, Down = brake, Left/Right = steer,
+A = steering assist, R = restart, Esc = quit). For the game:
+
+```python
+from sim.teleop import KeyboardTeleop
+teleop = KeyboardTeleop(env.car_params)                 # steer_assist=True for the optional assist
+action = teleop.action_from_pygame(speed=info["vx"])    # same [throttle, steering] as the controllers
+```
+The human goes through the same limits as every controller (the car turns its wheels at most
+3.2 rad/s). Gas ramps up over 0.3 s; Down brakes fully; no key = coast. The optional steering
+assist (off by default) caps the steering request at speed to what the tires can use, so a held key
+can't spin the car; it only ever asks for less steering, and should be reported if used in results.
+
 ## Viewer (`sim/viewer.py`)
 `TopDownView(track).draw(cars, text)` draws any number of cars (dicts with x, y, psi,
 color). Drawing only – it never steps physics – so the game can step several envs and draw
