@@ -22,8 +22,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
-      # Only what the sim tests need (not PyTorch / Stable-Baselines3, which are large)
-      - name: Install test dependencies
-        run: pip install numpy gymnasium casadi pygame-ce "imageio[ffmpeg]"
+      # Install the repo the way teammates do (pip install -e .), plus only what the sim
+      # tests need (not PyTorch / Stable-Baselines3, which are large)
+      - name: Install
+        run: pip install -e . casadi pygame-ce "imageio[ffmpeg]"
       - name: Run sim tests
         run: python sim/tests/test_racing.py

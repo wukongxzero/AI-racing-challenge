@@ -240,6 +240,20 @@ def test_info_for_ppo():
     assert info["progress_rate"] > 0
 
 
+def test_obs_matches_names():
+    """obs[i] is exactly the value env.obs_names[i] names in info (PPO depends on it)."""
+    env = RacingEnv()
+    obs, info = env.reset(options={"random_start": True}, seed=5)
+    for _ in range(30):
+        obs, _, _, _, info = env.step([0.6, 0.3])
+    for i, name in enumerate(env.obs_names):
+        if name.startswith("kappa_ahead_"):
+            want = info["kappa_ahead"][env.lookahead.index(float(name.split("_")[-1]))]
+        else:
+            want = info[name]
+        assert abs(float(obs[i]) - float(want)) < 1e-4 * (1 + abs(float(want))), name
+
+
 def test_viewer_headless():
     try:
         import pygame  # noqa: F401
@@ -296,6 +310,56 @@ def test_partial_first_lap_not_counted():
     _, info = env.reset(options={"s0": 80.0, "v0": 2.0})
     info, _, _ = _drive(env, info, 300)                      # crosses the line once
     assert env.lap == 0 and info["progress"] > env.track.length
+
+
+def test_first_lap_timed_only_from_start_line():
+    """Starting 8 m after the line, the first crossing must not count as a lap (it would
+    be a 94 % lap with a too-short time); the next full lap counts with a real time."""
+    env = RacingEnv(max_laps=1, time_limit=80, log=False)
+    _, info = env.reset(options={"s0": 8.0, "v0": 3.0})
+    info, term, _ = _drive(env, info, 3000)
+    assert term and env.lap == 1
+    assert info["progress"] > 2 * env.track.length          # it drove ~2 laps for 1 counted
+    assert 23 < env.lap_times[0] < 30                        # a full lap (~25-26 s)
+    assert env.lap_log[0]["clean"] is True
+
+
+def test_reset_options_checked_and_ranges():
+    env = RacingEnv()
+    try:
+        env.reset(options={"V0": 5.0})                       # typo must not be ignored
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("misspelled option accepted")
+    speeds = set()
+    for seed in range(20):
+        _, info = env.reset(seed=seed, options={"random_start": True, "v0": (0.5, 2.5),
+                                                "e_psi0": (-0.15, 0.15)})
+        assert 0.5 <= info["vx"] <= 2.5 and abs(info["e_psi"]) <= 0.15 + 1e-9
+        speeds.add(round(info["vx"], 6))
+    assert len(speeds) > 15                                  # really drawn each reset
+    a = env.reset(seed=3, options={"v0": (0.5, 2.5)})[0]
+    b = env.reset(seed=3, options={"v0": (0.5, 2.5)})[0]
+    assert np.array_equal(a, b)                              # and reproducible with a seed
+
+
+def test_bad_actions_and_order_rejected():
+    env = RacingEnv()
+    try:
+        env.step([0.0, 0.0])                                 # before reset
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("step before reset accepted")
+    env.reset()
+    for bad in ([float("nan"), 0.0], [0.0, float("inf")]):
+        try:
+            env.step(bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"non-finite action {bad} accepted")
 
 
 def test_random_start_seeded():

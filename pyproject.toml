@@ -1,0 +1,16 @@
+# Makes the repo installable so `import sim` works from any folder (e.g. controllers/ppo/train.py).
+# One-time setup, from the repo root:   pip install -e .
+# (-e = "editable": Python uses these files directly, so `git pull` updates it.)
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-racing-challenge"
+version = "0.1.0"
+description = "Shared racing environment for the ROB-GY 6323 AI Racing Challenge"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.24", "gymnasium>=1.0"]   # the rest is in requirements.txt
+
+[tool.setuptools]
+packages = ["sim"]

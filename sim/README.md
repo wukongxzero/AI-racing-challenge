@@ -23,7 +23,8 @@ python sim/examples/drive_lap.py --video lap.mp4   # record a lap
 python sim/tests/test_racing.py
 ```
 
-Install: `pip install -r requirements.txt` from the repo root. The team uses `pygame-ce` (community edition of pygame, same `import pygame`); it installs on every Python version. Don't install regular `pygame` in the same Python.
+Install, once, from the repo root: `pip install -r requirements.txt`, then `pip install -e .` (makes
+`import sim` work from any folder, e.g. `controllers/ppo/train.py`). The team uses `pygame-ce` (community edition of pygame, same `import pygame`); it installs on every Python version. Don't install regular `pygame` in the same Python.
 
 ## Environment
 - `car`: `"numpy"` now; `"mujoco"` later behind the same interface.
@@ -32,7 +33,10 @@ Install: `pip install -r requirements.txt` from the repo root. The team uses `py
   Off track = any part of the car past the road edge (|e_c| > half-width − half car width).
 - `max_laps` → `terminated`; `time_limit` (s) → `truncated` (PPO: `time_limit=50` = 1000 steps).
 - `mu_scale`: friction multiplier for robustness tests (creation or `reset(options={"mu_scale": 0.7})`).
-- `reset(options=...)`: `s0, e_c0, e_psi0, v0`, or `{"random_start": True}` (seeded via `reset(seed=...)`).
+- `reset(options=...)`: `s0, e_c0, e_psi0, v0` as numbers or `(low, high)` ranges drawn at every reset
+  (e.g. `{"random_start": True, "v0": (0.5, 2.5)}`); `random_start` fills in the rest. Seeded via
+  `reset(seed=...)`. A misspelled option name raises an error.
+- Actions must be finite: a NaN or inf action raises an error (instead of silently becoming full throttle).
   Default: start line, centred, at rest.
 - One step = one 50 ms command (20 Hz). The sim waits for the controller (evaluation mode);
   the example shows real-time pacing for game mode.
@@ -56,9 +60,12 @@ going backwards, ≈0 = stalled), `lap, lap_times, lap_completed, off_track, off
 ## Laps and logs
 - A lap counts at each start-line crossing (time interpolated inside the 50 ms step).
   Progress comes from windowed projection, so shortcuts and reversing over the line don't
-  count. A first partial lap from a mid-track start (< 90 % of the lap) is not counted.
+  count. Only a start on the start line (s0 = 0) times lap 1; from a mid-track start the first
+  crossing just starts the timing, so every recorded lap is a full lap.
 - `env.get_log()` / `env.save_log(path)`: every step's time, state, command, s, progress,
-  e_c, e_psi, off-track flag and lap. `env.lap_log`: lap time and off-track count per lap.
+  e_c, e_psi, off-track flag and lap. `env.lap_log`: lap time, off-track count and `clean`
+  (no off-track) per lap. Cutting a corner across the grass is slower but can gain a little,
+  so results should count only clean laps.
 
 ## Track helpers (`env.track`)
 `heading(s)`, `curvature(s)`, `width(s)`, `lookahead(s, dists)`, `heading_ahead(s, dists, psi)`,

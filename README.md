@@ -61,6 +61,7 @@ Gymnasium interface, the CasADi car and rendering. The workflow lives in
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .          # once: makes `import sim` work from any folder
 ```
 
-On Windows (PowerShell): `python -m venv .venv`, then `.venv\Scripts\Activate.ps1`, then `pip install -r requirements.txt`.
+On Windows (PowerShell): `python -m venv .venv`, then `.venv\Scripts\Activate.ps1`, then `pip install -r requirements.txt` and `pip install -e .`.
