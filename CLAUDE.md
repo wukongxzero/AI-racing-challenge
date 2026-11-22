@@ -33,17 +33,22 @@ see this repo.
 Rule the team agreed on: **only decisions that affect more than one person are decided
 together; anything that only affects one person is that person's own call.**
 
-## 3. Timeline
+## 3. Timeline (from the preliminary report – this is the official schedule)
 
-- Nov 22: interface agreed by everyone (done).
-- **Next 1–2 days: Cristhian ships the stand-in NumPy car** (`RacingEnv` + track code +
-  example script) so nobody is blocked.
-- **By Nov 24: MuJoCo car swaps in** behind the same `RacingEnv`. Cristhian then shares the
-  car's numbers (fitted bicycle-model parameters) for MPCC; Pavan retrains PPO on it.
-  If the MuJoCo car isn't ready, everyone stays on the NumPy car and nothing changes.
-- Dec 3: pre-report with first results (TA feedback).
-- Dec 10: presentation (5 min + 2 min questions) + live demo.
-- Dec 17: final report.
+| Dates | Work |
+|---|---|
+| Nov 20–26 | Stand-in NumPy car; first Pure Pursuit, MPCC and PPO laps; evaluation and logging pipeline |
+| Nov 27–Dec 3 | MuJoCo car swapped in; MPCC retuned and PPO retrained on it; first lap-time table (pre-report due **Dec 3**) |
+| Dec 4–10 | Multi-seed runs, ablations, robustness tests; game integration (presentation **Dec 10**, 5 min + 2 min Q&A) |
+| Dec 11–17 | Failure analysis, clean reproducible scripts, final report (**Dec 17**) |
+
+Environment milestones inside that:
+- **Now (Nov 22–23): ship the stand-in NumPy car** (`RacingEnv` + track code + example) so
+  nobody is blocked.
+- **~Nov 25–26: MuJoCo checkpoint** – if the real-wheel car is still glitchy, switch to the
+  no-contact backup (1–2 days).
+- **By Nov 27: MuJoCo car swaps in** behind the same `RacingEnv`; share the car's numbers for
+  MPCC; Pavan retrains PPO. If it isn't ready, everyone stays on the NumPy car.
 
 ## 4. Tech stack
 
@@ -99,7 +104,9 @@ directly. `reward` is for PPO; Pavan owns its design.
 - How it's delivered: `info` holds everything by name every step (car state, previous
   command, `s, e_c, e_psi, kappa, w_left, w_right`, `kappa_ahead` and `heading_ahead` at
   0.5–3.0 m, `progress`, `ds`, `progress_rate`, `off_track`, laps). `obs` is a float32
-  vector of the same values; `env.obs_names` gives its order.
+  vector of the main ones – car state, `s, e_c, e_psi, kappa, w_left, w_right`, previous
+  command and `kappa_ahead` (21 numbers); `env.obs_names` gives its order. Everything else
+  is in `info` only.
 
 ### 5.4 Track
 - Files (already made, in `tracks/`):
@@ -182,7 +189,19 @@ Ship a minimal working version first (track + car + reset/step), push it, then a
 
 ## 7. What comes after (the future, so design for it now)
 
-- **MuJoCo car (by Nov 24)** replaces the NumPy car behind `RacingEnv(car="mujoco")`. Keep
+- **MuJoCo car (by Nov 27)** replaces the NumPy car behind `RacingEnv(car="mujoco")`.
+  Plan (shared with the team, also in the preliminary report):
+  1. **Real wheels first** – chassis + 4 wheels touching the floor, grip from MuJoCo's contact
+     model. Start from an existing MuJoCo example car. Risk: contact tuning can be glitchy
+     (jitter, bouncing, flipping, unrealistic grip).
+  2. **Backup: no wheel contact** – the car is one body sliding flat on the floor (forward,
+     sideways, rotation only); each physics step our code computes tire forces from the
+     Pacejka tire formula and applies them. No contact glitches, a proper grip limit, little
+     tuning, ~1–2 days to build. Switch to this around Nov 25–26 if the real-wheel car is still
+     glitchy.
+  3. If neither is ready by Nov 27, everyone stays on the NumPy car.
+  For MPCC: with real wheels, fit a bicycle model to logged test drives (1–2 days); with the
+  backup, share the tire formula and its numbers directly. Keep
   the car behind a clear internal boundary so a second car implementation drops in without
   touching the track code, `RacingEnv`'s public API, or anyone else's code. Keep the NumPy
   car working as a fallback.
@@ -223,6 +242,47 @@ identification by least squares (fitting the bicycle model) and the model-mismat
   the vehicle dynamics – "drives sensibly and has a grip limit" is the bar.
 - Work in small, testable pieces; add a quick test or demo for each piece.
 
+## 9b. Environment design notes (from planning – use these)
+
+- **Physics step** a few ms (about 5 ms) inside each 50 ms control step; RK4 or similarly
+  stable integration. A dynamic bicycle model is stiff at very low speed, so if one is used,
+  blend from a kinematic model below ~0.3 m/s and the dynamic model above ~1 m/s.
+- **Steering angle is part of the car state** (because it's rate-limited): the command is a
+  target angle; the car moves toward it at most 3.2 rad/s.
+- **Grip limit is required** (cap lateral acceleration ~1 g, or tire forces with a peak).
+- **Track projection:** smooth periodic spline through the centerline, re-parameterized by arc
+  length; dense lookup table; local search around the previous `s`; heading error wrapped to
+  [-pi, pi]; keep the track tangent angle continuous (no 2*pi jumps) so it works in CasADi.
+- **Lap logic:** a lap counts only after crossing the start line having covered most of the
+  track; handle wrap-around of `s`; reversing over the line must not count.
+- **Off track:** |e_c| > half road width − half car width. Racing: "grass" = lower grip / extra
+  drag, car keeps going, event counted. Training: configurable (end episode or not).
+- **Gymnasium:** report `terminated` (e.g. off track in training) separately from `truncated`
+  (time/step limit). Declare action/observation spaces. Support starting anywhere on the track
+  (`reset(options=...)`).
+- **Two run modes:** evaluation/lockstep (sim waits for the controller) and real-time (game).
+- **Game view:** Pygame top-down, drawn from each car's position and heading (not MuJoCo's 3D
+  camera). Keep rendering separate from physics. Several cars are "ghosts": each has its own
+  simulation state, stepped side by side, no collisions. Design so all cars *could* later live in
+  one shared MuJoCo scene (collisions would then be a setting, not a rewrite) – stretch goal only.
+- **Teleop:** basic arrow keys → throttle/brake and steering commands → same limiter.
+- **Car values to add once the car drives** (teammates need them): wheelbase, friction
+  coefficient mu, top speed, acceleration/braking limits. Keep grip scalable for the
+  "20–30% less friction" robustness test.
+- **3D view** (MuJoCo rendering shown in Pygame) is possible later – stretch goal only.
+
+## 9c. Tracks – how they were made
+
+- Both tracks were designed in planning and are final (`tracks/`). Previews show the track,
+  start line and driving direction.
+- `training_track.csv` was built from straight lines joined by circular arcs (fillets) – radii
+  3–7 m – then resampled every 10 cm. Features: main straight + start line, chicane flick,
+  carousel (long 180°), back straight, hairpin, double-apex right, hairpin 2.
+- `hidden_track.csv` was traced from Cristhian's hand drawing, smoothed, scaled 1.5× so the
+  tightest corner is 2.5 m, resampled every 10 cm.
+- Rules both follow: road 1.5 m, no corner under 2.5 m radius, no two road sections closer than
+  ~5 m centerline-to-centerline, counter-clockwise, first point = start line.
+
 ## 10. Change log (changes to agreed decisions – keep this updated)
 
 | Date | Change | Who is affected | Team told? |
@@ -235,3 +295,4 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | `info`/`obs` contents fixed (see 5.3); added `progress_rate`, `mu_scale` option | Pavan, Nathaly | No – message drafted |
 | Nov 22 | NumPy car is all-wheel drive; provisional speed/accel values (see 5.7) | Everyone (car behavior) | No – message drafted |
 | Nov 22 | Pygame on Python 3.15 → install `pygame-ce` | Nathaly, anyone running the game | No – message drafted |
+| Nov 22 | Track CSVs and previews moved from the repo's top level into `tracks/` (the agreed layout); `RacingEnv(track="training")` finds them | Anyone loading the CSVs by path | No – message drafted |
