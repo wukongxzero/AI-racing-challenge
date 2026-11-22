@@ -75,10 +75,6 @@ version); don't install regular `pygame` in the same Python.
   is the time in the current lap (for a game HUD); every recorded lap is a
   full lap. Count clean laps (cutting a corner across the grass is slower but can gain a little).
 - Per-step logs: `env.get_log()` / `env.save_log(path)`.
-- Ideas for the game, from how racing games handle beginners (your call): a braking cue ("BRAKE" or
-  the road ahead colored red; `KeyboardTeleop.speed_limit(s)` gives the speed to brake to), assist
-  presets (Beginner / Intermediate / Expert), drawing at 60 frames/s between the 20 Hz steps, and
-  a short human-trial protocol (practice laps, best clean lap of N, assists used).
 - Game: the viewer draws several cars at once ("ghosts"), whole track or a close-up that follows a car; the human uses `sim.teleop`, whose
   input shaping must be reported in results (see [Keyboard teleop](#keyboard-teleop-simteleoppy)).
 
@@ -186,7 +182,8 @@ speed to `assist_margin` × the angle the tires can use (default ×1.4, being tu
 the braking assist (**on by default** when the track is given: casual players don't brake) looks 8 m
 ahead and cuts the gas or brakes when the car is too fast for a corner, planning corners at
 `brake_margin` = 0.5 of the usable grip (a simulated gas-always-held driver then laps with no
-off-track). All of these only make the
+off-track). `teleop.speed_limit(s)` returns the speed the braking assist brakes to at
+progress `s`. All of these only make the
 human's input gentler, never stronger than what controllers can command.
 
 ## Viewer (`sim/viewer.py`)
