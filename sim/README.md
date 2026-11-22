@@ -42,41 +42,44 @@ version); don't install regular `pygame` in the same Python.
 
 ## Start here by role
 
+What the environment provides for each part.
+
 **PPO (Pavan)**
-- Make the env with `gymnasium.make("Racing-v0", off_track="terminate", time_limit=50)` (50 s = 1000
-  steps). Through `gym.make`, Gymnasium's `check_env` passes every check with zero warnings.
-- Your 15 inputs are all in `info` by name: `vx, vy, yaw_rate, delta, e_c, e_psi, prev_throttle,
-  prev_steer, kappa_ahead` (6 values, 0.5–3.0 m ahead), `w_left` / `w_right`. The env's own `obs`
-  vector is ordered as `env.obs_names` (a test checks it).
-- Termination signals: off track → `terminated` in `"terminate"` mode; reverse heading → `|e_psi| > π/2`;
-  stall → `progress_rate` (m/s along the track) near 0.
-- Random starts as ranges, drawn every reset and reproducible with `seed`:
-  `reset(options={"random_start": True, "e_psi0": (-0.15, 0.15), "v0": (0.5, 2.5)})`.
-- Fast training: `log=False`, no `render_mode` (about 3,500 steps/s per env; 8 parallel envs work).
+- Also available as `gymnasium.make("Racing-v0", ...)` with the same arguments; created that way,
+  Gymnasium's `check_env` passes every check with zero warnings. `time_limit=50` = 1000 steps.
+- All 15 inputs of the PPO plan are in `info` by name: `vx, vy, yaw_rate, delta, e_c, e_psi,
+  prev_throttle, prev_steer, kappa_ahead` (6 values, 0.5–3.0 m ahead), `w_left` / `w_right`. The env's
+  own `obs` vector is ordered as `env.obs_names` (a test checks it).
+- Off track ends the episode in `off_track="terminate"` mode; `e_psi` is the heading error and
+  `progress_rate` the speed along the track (m/s, negative = going backwards).
+- `reset()` options accept `(low, high)` ranges, drawn at every reset and reproducible with `seed`.
+- Speed: about 3,500 steps/s per env with `log=False` and no `render_mode`; 8 envs in parallel
+  processes run at about 6,300 steps/s in total on one laptop.
 - Videos: `render_mode="rgb_array"` + `sim.video.record_episode`. Gymnasium's `RecordVideo` needs
   `moviepy`, which can't be installed on Python 3.15.
 
 **MPCC (Berinay)**
 - Track as CasADi B-splines: `env.track.casadi_centerline()` → x(s), y(s), theta(s), kappa(s).
-- The car's own equations in CasADi: `sim/car_casadi.py` (tested identical to the simulator).
-- The car **understeers**: a kinematic model over-predicts turning about 2× at 5 m/s, so a kinematic
-  MPCC runs wide; use `dynamic_model`, or use the difference as a model-mismatch experiment.
-- Steering is rate-limited in the simulator: constrain |δ_k − δ_(k−1)| ≤ 3.2·0.05 rad, starting from
-  `info["delta"]`. Positions are at the centre of mass, not the rear axle.
-- Sign: our `e_c` is **positive to the left**; the common MPCC contouring formula has the opposite sign.
+- The car's own equations in CasADi: `sim/car_casadi.py` (`dynamic_model`, `kinematic_model`,
+  `discretize`), tested identical to the simulator.
+- The car understeers: at 5 m/s it turns about half as sharply as a kinematic model predicts
+  (`env.car_params["understeer_gradient"]`).
+- The simulator limits steering to 3.2 rad/s and 0.42 rad; the current wheel angle is `info["delta"]`.
+  Positions are at the centre of mass, not the rear axle.
+- Our `e_c` is positive to the left; the common MPCC contouring formula has the opposite sign.
 
 **Pure Pursuit, game and evaluation (Nathaly)**
-- Lookahead point: `env.track.point_at(s + Ld)`; wheelbase etc. in `env.car_params`.
-- Speed profile: use `env.car_params["a_lat_max"]` (≈ 7.9 m/s², the grip the car really has) with a
-  margin, **not μ·g** – with μ·g the car leaves the track in tight corners. Because the car
-  understeers, plain Pure Pursuit drifts wide in long corners; multiplying the steering angle by
-  `1 + K·v²/L` with `K = env.car_params["understeer_gradient"]` compensates (see `drive_lap.py`).
-- Results: `env.lap_log` gives lap time, off-track count and `clean` per lap; `info["lap_timer"]`
-  is the time in the current lap (for a game HUD); every recorded lap is a
-  full lap. Count clean laps (cutting a corner across the grass is slower but can gain a little).
+- Centerline point at any progress: `env.track.point_at(s)`; wheelbase etc. in `env.car_params`.
+- `env.car_params["a_lat_max"]` is the sideways grip the car actually reaches (≈ 7.9 m/s²);
+  μ·g overestimates it by about 12 %. The car understeers (`understeer_gradient` K ≈ 0.010: a circle
+  of radius R at speed v needs δ = L/R + K·v²/R).
+- `env.lap_log` gives lap time, off-track count and `clean` per lap; every recorded lap is a full lap.
+  Corner cuts across the grass are slower but can gain a little time. `info["lap_timer"]` is the time
+  in the current lap.
 - Per-step logs: `env.get_log()` / `env.save_log(path)`.
-- Game: the viewer draws several cars at once ("ghosts"), whole track or a close-up that follows a car; the human uses `sim.teleop`, whose
-  input shaping must be reported in results (see [Keyboard teleop](#keyboard-teleop-simteleoppy)).
+- The viewer draws several cars at once, whole track or a close-up that follows a car. The human
+  driver uses `sim.teleop`; its input shaping (assists) is described in
+  [Keyboard teleop](#keyboard-teleop-simteleoppy) and recorded in the human logs.
 
 ## Environment options
 - `car`: `"numpy"` now; `"mujoco"` later behind the same interface.
@@ -167,7 +170,7 @@ that follows the car; the screen shows lap time, last and best lap, speed, and t
 commands being sent. Keys are read right before each step (no extra delay). `--log human.csv` saves
 every attempt as `human_<n>.csv` (every step, plus the assist settings at each step) and
 `human_<n>_laps.csv` (lap times, clean, and which assists were used in each lap), the same data the
-controllers produce plus what results must report about the human's assists. For the game:
+controllers produce, plus the assist settings used. For the game:
 
 ```python
 from sim.teleop import KeyboardTeleop
