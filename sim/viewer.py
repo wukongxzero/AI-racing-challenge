@@ -19,13 +19,20 @@ START = (240, 200, 40)
 
 
 class TopDownView:
+    """headless=True draws into an off-screen image (no window): use frame() to get it,
+    e.g. for recording videos."""
+
     def __init__(self, track, window=(1000, 700), margin=1.5, car_length=0.58, car_width=0.31,
-                 caption="RacingEnv"):
+                 caption="RacingEnv", headless=False):
         import pygame  # imported here so the sim works without pygame installed
         self.pg = pygame
+        self.headless = headless
         pygame.init()
-        self.screen = pygame.display.set_mode(window)
-        pygame.display.set_caption(caption)
+        if headless:
+            self.screen = pygame.Surface(window)
+        else:
+            self.screen = pygame.display.set_mode(window)
+            pygame.display.set_caption(caption)
         self.font = pygame.font.SysFont("consolas", 18)
         self.car_length, self.car_width = car_length, car_width
 
@@ -60,9 +67,10 @@ class TopDownView:
         """Draw cars (dicts with x, y, psi and optional color). Returns False when
         the window was closed (or Esc pressed)."""
         pg = self.pg
-        for event in pg.event.get():
-            if event.type == pg.QUIT or (event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE):
-                return False
+        if not self.headless:
+            for event in pg.event.get():
+                if event.type == pg.QUIT or (event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE):
+                    return False
         self.screen.blit(self.background, (0, 0))
         for car in cars:
             c, s = math.cos(car["psi"]), math.sin(car["psi"])
@@ -74,8 +82,14 @@ class TopDownView:
                          self.to_px(car["x"] + c * hl, car["y"] + s * hl), 2)  # nose
         if text:
             self.screen.blit(self.font.render(text, True, (255, 255, 255)), (10, 8))
-        pg.display.flip()
+        if not self.headless:
+            pg.display.flip()
         return True
 
+    def frame(self):
+        """The last drawn picture as an RGB array, shape (height, width, 3), uint8."""
+        return np.ascontiguousarray(self.pg.surfarray.array3d(self.screen).swapaxes(0, 1))
+
     def close(self):
-        self.pg.quit()
+        if not self.headless:
+            self.pg.display.quit()

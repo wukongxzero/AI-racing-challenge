@@ -19,6 +19,7 @@ Run the example and tests:
 python sim/examples/drive_lap.py                       # 1 lap with a Pygame top-down view
 python sim/examples/drive_lap.py --laps 3 --track hidden
 python sim/examples/drive_lap.py --no-view --plot --log run.csv
+python sim/examples/drive_lap.py --video lap.mp4   # record a lap
 python sim/tests/test_racing.py
 ```
 
@@ -38,10 +39,14 @@ Install: `pip install -r requirements.txt` from the repo root. The team uses `py
 - Default reward = metres of progress this step − `off_track_penalty` while off track.
   Pass `reward_fn=lambda info: ...` to replace it (Pavan owns the reward).
 - `log=False` turns off per-step logging for fast training.
+- Also available as `gymnasium.make("Racing-v0", **same_arguments)` (registered on `import sim`).
+  Through `gym.make`, Gymnasium's `check_env` runs every check, render modes included, with
+  zero warnings; on a directly created `RacingEnv` it warns that it can't test render modes.
+- `render_mode`: `None` (default, nothing drawn, fastest), `"rgb_array"` (`render()` returns a
+  960×640 top-down picture) or `"human"` (live window, real time).
 
 ## Observation and info
-`env.obs_names` gives the order of the float32 obs vector (finite bounds, so `check_env`
-passes with zero warnings):
+`env.obs_names` gives the order of the float32 obs vector (finite bounds):
 `x, y, psi, vx, vy, yaw_rate, delta, s, e_c, e_psi, kappa, w_left, w_right,
 prev_throttle, prev_steer, kappa_ahead_0.5 … kappa_ahead_3`.
 `info` has the same values by name plus `t, heading_ahead` (road direction ahead relative to
@@ -73,6 +78,12 @@ F1TENTH geometry (m 3.74 kg, Iz 0.0471, lf 0.159, lr 0.171, wheelbase 0.33 m, wi
   no air drag. Braking doesn't reduce cornering grip (known simplification).
 - Steering: 0.42 rad max, 3.2 rad/s rate. Kinematic model below 0.3 m/s, blended up to 1 m/s.
 - **Provisional:** a_max 5 m/s², brake 8 m/s², top speed 8 m/s, grass grip ×0.6 + extra drag.
+
+## Videos (`sim/video.py`)
+`record_episode(env, act, "lap.mp4")` runs one episode with `act(obs, info) -> action` and saves
+an MP4 (20 fps = real time); the env needs `render_mode="rgb_array"`. Needs `imageio[ffmpeg]`.
+Gymnasium's `RecordVideo` wrapper also works with `render_mode="rgb_array"`, but it needs
+`moviepy`, which can't be installed on Python 3.15 (it requires an old `pillow`).
 
 ## Viewer (`sim/viewer.py`)
 `TopDownView(track).draw(cars, text)` draws any number of cars (dicts with x, y, psi,

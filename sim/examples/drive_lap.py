@@ -7,6 +7,7 @@ plus env.car_params for the wheelbase.
     python sim/examples/drive_lap.py                    # 1 lap, training track, Pygame view
     python sim/examples/drive_lap.py --laps 3 --track hidden
     python sim/examples/drive_lap.py --no-view --plot   # headless, save a matplotlib plot
+    python sim/examples/drive_lap.py --video lap.mp4    # record the lap as a video
 """
 import argparse
 import math
@@ -52,7 +53,16 @@ def main():
     ap.add_argument("--no-view", action="store_true", help="no Pygame window (runs as fast as possible)")
     ap.add_argument("--plot", action="store_true", help="save a matplotlib plot of the driven line")
     ap.add_argument("--log", default=None, help="save the per-step log to this CSV")
+    ap.add_argument("--video", default=None, help="record the run to this MP4 file (no window)")
     args = ap.parse_args()
+
+    if args.video:
+        from sim.video import record_episode
+        env = RacingEnv(track=args.track, max_laps=args.laps, time_limit=120.0, render_mode="rgb_array")
+        info = record_episode(env, lambda obs, info: controller(env, info), args.video, seed=0)
+        print(f"saved {args.video}: {info['lap']} lap(s) in {info['t']:.2f} s, "
+              f"off-track events {info['off_track_count']}")
+        return
 
     env = RacingEnv(car="numpy", track=args.track, off_track="grass",
                     max_laps=args.laps, time_limit=120.0)

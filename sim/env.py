@@ -12,6 +12,7 @@ computer speed.
 from __future__ import annotations
 
 import csv
+import time
 from dataclasses import replace
 
 import numpy as np
@@ -80,14 +81,22 @@ class RacingEnv(_Base):
         off_track_penalty: default-reward penalty per step spent off track.
         car_params:     CarParams override (everyone should use the defaults).
         log:            record the per-step log (turn off for fast training).
+        render_mode:    None (default, no drawing - fastest), "rgb_array" (render() returns
+                        a top-down picture, e.g. for Gymnasium's RecordVideo) or "human"
+                        (a live Pygame window, drawn every step in real time).
     """
 
-    metadata = {"render_modes": [], "render_fps": 20}
+    # 20 fps = one picture per 50 ms step, so recorded videos play in real time
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 20}
 
     def __init__(self, car="numpy", track="training", off_track="grass", max_laps=None,
                  time_limit=None, lookahead=(0.5, 1.0, 1.5, 2.0, 2.5, 3.0), mu_scale=1.0,
                  reward_fn=None, off_track_penalty=1.0, car_params=None, log=True,
-                 lap_min_fraction=0.9):
+                 lap_min_fraction=0.9, render_mode=None):
+        if render_mode not in (None, "human", "rgb_array"):
+            raise ValueError(f"render_mode must be None, 'human' or 'rgb_array', not {render_mode!r}")
+        self.render_mode = render_mode
+        self._view = None                  # Pygame viewer, created on the first render
         if car == "mujoco":
             raise NotImplementedError("MuJoCo car not available yet - use car='numpy'.")
         if car != "numpy":
@@ -205,6 +214,9 @@ class RacingEnv(_Base):
         self._off = self._is_off()
         info = self._make_info(lap_completed=False)
         self._record(info)
+        self._info = info
+        if self.render_mode == "human":
+            self.render()
         return self._obs(info), info
 
     # ------------------------------------------------------------------- step
@@ -240,6 +252,9 @@ class RacingEnv(_Base):
         truncated = bool(self.time_limit is not None and self.t >= self.time_limit - 1e-9
                          and not terminated)
         self._record(info)
+        self._info = info
+        if self.render_mode == "human":
+            self.render()
         return self._obs(info), reward, terminated, truncated, info
 
     # ---------------------------------------------------------------- helpers
@@ -346,5 +361,39 @@ class RacingEnv(_Base):
             for row in zip(*(log[k] for k in keys)):
                 w.writerow([int(v) if isinstance(v, (bool, np.bool_)) else v for v in row])
 
+    # ---------------------------------------------------------------- render
+    RENDER_SIZE = (960, 640)   # pixels; both multiples of 16, which video encoders prefer
+
     def render(self):
-        return None  # top-down Pygame view lives in the game code
+        """Draw the current state top-down (Gymnasium convention).
+
+        "rgb_array": returns the picture as a (640, 960, 3) uint8 array.
+        "human":     shows it in a window, paced to real time (20 fps); returns None.
+        None:        does nothing.
+        The game draws its own scene with sim/viewer.py; this is for recording and watching.
+        """
+        if self.render_mode is None or self._info is None:
+            return None
+        if self._view is None:
+            from .viewer import TopDownView
+            p = self._params
+            self._view = TopDownView(self.track, window=self.RENDER_SIZE, car_length=p.length,
+                                     car_width=p.width, headless=(self.render_mode == "rgb_array"))
+            self._next_frame_time = time.perf_counter()
+        info = self._info
+        color = (240, 140, 30) if info["off_track"] else (220, 40, 40)   # orange when off track
+        text = (f"t {info['t']:5.1f} s   v {info['vx']:4.1f} m/s   lap {info['lap']}   "
+                f"off-track {info['off_track_count']}")
+        self._view.draw([{"x": info["x"], "y": info["y"], "psi": info["psi"], "color": color}], text)
+        if self.render_mode == "rgb_array":
+            return self._view.frame()
+        # human: wait so that one 50 ms step also takes 50 ms on screen
+        self._next_frame_time += 1.0 / self.metadata["render_fps"]
+        time.sleep(max(0.0, self._next_frame_time - time.perf_counter()))
+        self._next_frame_time = max(self._next_frame_time, time.perf_counter())
+        return None
+
+    def close(self):
+        if self._view is not None:
+            self._view.close()
+            self._view = None

@@ -77,6 +77,9 @@ track.heading(s), track.curvature(s), track.width(s)          # road direction, 
 track.lookahead(s, dists), track.heading_ahead(s, dists, psi) # curvature / road direction ahead
 track.casadi_centerline()                     # CasADi B-splines x(s), y(s), theta(s), kappa(s) for MPCC
 RacingEnv(mu_scale=0.7) or reset(options={"mu_scale": 0.7})    # less grip for robustness tests
+gymnasium.make("Racing-v0", **kwargs)        # same env through Gymnasium's registry
+RacingEnv(render_mode="rgb_array" | "human")  # pictures for videos / a live window
+from sim.video import record_episode         # save an episode as MP4 (any Python version)
 ```
 **Update (Nov 22):** `track.project` takes the car's heading `psi` – heading error can't be
 computed from position alone. `track.point_at(s)` was added so Pure Pursuit can find its
@@ -300,8 +303,9 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | Clarified sign: lateral offset positive to the left; MPCC must flip the common contouring formula | Berinay | Yes |
 | Nov 22 | Added `env.car_params` (read-only car values: wheelbase, mu, v_max, …), incl. `a_lat_max` = usable grip ≈ 0.89·mu·g (use this, not mu·g, for speed profiles) | Nathaly (speed profile), Berinay (model) | No – message drafted |
 | Nov 22 | Added optional track helpers (`heading`, `curvature`, `width`, `lookahead`, `heading_ahead`, `casadi_centerline`); `project` `s_prev` may be `None` | Everyone (optional) | No – message drafted |
-| Nov 22 | `info`/`obs` contents fixed (see 5.3); obs has finite bounds (`check_env` passes with zero warnings); added `progress_rate`, `mu_scale` option | Pavan, Nathaly | No – message drafted |
+| Nov 22 | `info`/`obs` contents fixed (see 5.3); obs has finite bounds; added `progress_rate`, `mu_scale` option | Pavan, Nathaly | No – message drafted |
 | Nov 22 | NumPy car switched to the team's planned model (Pacejka tires, Liniger tire shape, mu 0.9, hard top speed, no drag); provisional speed/accel values (see 5.7) | Everyone (car behavior), Berinay (same equations as MPCC) | No – message drafted |
 | Nov 22 | Proposed: NumPy car is the fallback final car instead of a no-contact MuJoCo backup (see 5.7, 7) | Everyone (plan) | No – message drafted (needs team OK) |
+| Nov 22 | Added `render_mode` ("rgb_array" for videos, "human" window), `gym.make("Racing-v0")` (via it `check_env` passes all checks with zero warnings), `sim.video.record_episode` for MP4s; `requirements.txt` + `imageio[ffmpeg]`. Gymnasium's `RecordVideo` needs `moviepy`, which can't install on Python 3.15 | Pavan (videos, check_env), Nathaly | No – message drafted |
 | Nov 22 | Team uses `pygame-ce` instead of `pygame` (`requirements.txt` changed): same `import pygame`, installs on every Python version incl. 3.15; don't install both | Nathaly (game), anyone running the game | No – message drafted |
 | Nov 22 | Track CSVs and previews moved from the repo's top level into `tracks/` (the agreed layout); `RacingEnv(track="training")` finds them | Anyone loading the CSVs by path | No – message drafted |

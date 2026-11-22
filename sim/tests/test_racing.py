@@ -314,13 +314,15 @@ def test_gymnasium_api():
         print("  (gymnasium not installed - skipped)")
         return
     import warnings
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")   # the render check opens a window
     env = RacingEnv(off_track="terminate", time_limit=30)
     assert isinstance(env, gym.Env)
+    # Made through gym.make, all checks run (render modes too) with zero warnings
+    # (Pavan's plan); unrelated warnings, e.g. deprecation notices in other Gymnasium
+    # versions, are ignored
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        check_env(env, skip_render_check=True)
-    # zero warnings from Gymnasium's checker about our env (Pavan's plan); unrelated
-    # warnings, e.g. deprecation notices in other Gymnasium versions, are ignored
+        check_env(gym.make("Racing-v0", off_track="terminate", time_limit=30).unwrapped)
     ours = [str(w.message) for w in caught if "WARN" in str(w.message)]
     assert not ours, ours
     venv = gym.vector.SyncVectorEnv([lambda: RacingEnv(off_track="terminate", time_limit=5,
@@ -349,6 +351,58 @@ def test_casadi_centerline():
     d2 = (f["x"](S) - 1.0) ** 2 + (f["y"](S) - 2.0) ** 2
     g = ca.Function("g", [S], [ca.gradient(d2, S)])
     assert np.isfinite(float(g(10.0)))
+
+
+def test_render_modes():
+    """rgb_array returns a picture that changes as the car moves; human mode runs in a
+    (hidden) window; no render_mode draws nothing; a wrong mode is refused."""
+    try:
+        import pygame  # noqa: F401
+    except ImportError:
+        print("  (pygame not installed - skipped)")
+        return
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    env = RacingEnv(render_mode="rgb_array")
+    env.reset(seed=0)
+    first = env.render()
+    assert first.shape == (640, 960, 3) and first.dtype == np.uint8
+    for _ in range(10):
+        env.step([1.0, 0.0])
+    assert not np.array_equal(first, env.render())
+    env.close()
+    env = RacingEnv(render_mode="human")
+    env.reset()
+    env.step([0.5, 0.0])                       # draws itself each step
+    env.close()
+    env = RacingEnv()
+    env.reset()
+    assert env.render() is None
+    try:
+        RacingEnv(render_mode="video")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("bad render_mode accepted")
+
+
+def test_record_episode_video(tmp_path=None):
+    """record_episode writes an MP4 with one frame per step (plus the start frame)."""
+    try:
+        import imageio.v2 as imageio
+        import pygame  # noqa: F401
+    except ImportError:
+        print("  (imageio or pygame not installed - skipped)")
+        return
+    from sim.video import record_episode
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    path = os.path.join(str(tmp_path or os.path.dirname(__file__)), "_video_test.mp4")
+    env = RacingEnv(render_mode="rgb_array")
+    record_episode(env, lambda obs, info: [1.0, 0.0], path, max_steps=30)
+    reader = imageio.get_reader(path)
+    assert reader.count_frames() == 31
+    reader.close()
+    if tmp_path is None:
+        os.remove(path)
 
 
 def test_mujoco_placeholder():
