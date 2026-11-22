@@ -61,11 +61,15 @@ B-splines x, y, theta, kappa over s ∈ [−5, L+20]). The centerline is a perio
 in arc length; `length` = lap length.
 
 ## Car (`env.car_params`)
-Dynamic bicycle model, F1TENTH geometry (m 3.74 kg, Iz 0.0471, lf 0.159, lr 0.171,
-wheelbase 0.33 m, width 0.31 m). Tire forces with mu = 1.0 (≈1 g grip) and a friction
-ellipse. All-wheel drive, no reverse. Steering: 0.42 rad max, 3.2 rad/s rate. Below
-1 m/s it blends into a kinematic model (pure kinematic below 0.3 m/s). **Provisional:** a_max 5 m/s², brake 8 m/s²,
-top speed 8 m/s, grass grip ×0.6 + extra drag.
+The team's planned dynamic bicycle model (equations at the top of `sim/car_numpy.py`),
+F1TENTH geometry (m 3.74 kg, Iz 0.0471, lf 0.159, lr 0.171, wheelbase 0.33 m, width 0.31 m).
+- Tires: Pacejka formula, curve shape from Liniger et al. (2015), peak force = mu × axle load,
+  mu = 0.9. Max sideways grip ≈ 0.8 g. The car **understeers**: it needs more steering than
+  the geometry says, more so at speed (the example controller compensates).
+- Acceleration is applied directly (`to_action` is exact), hard top speed, no reverse,
+  no air drag. Braking doesn't reduce cornering grip (known simplification).
+- Steering: 0.42 rad max, 3.2 rad/s rate. Kinematic model below 0.3 m/s, blended up to 1 m/s.
+- **Provisional:** a_max 5 m/s², brake 8 m/s², top speed 8 m/s, grass grip ×0.6 + extra drag.
 
 ## Viewer (`sim/viewer.py`)
 `TopDownView(track).draw(cars, text)` draws any number of cars (dicts with x, y, psi,

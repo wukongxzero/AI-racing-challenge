@@ -134,28 +134,32 @@ def test_brake_stops_no_reverse():
     assert info["vx"] == 0.0
 
 
-def _max_accel(env):
+def _max_lat_accel(env):
+    """Largest sideways acceleration (car frame) in the log, from the driven path."""
     L = env.get_log()
     c, s = np.cos(L["psi"]), np.sin(L["psi"])
     V = np.stack([L["vx"] * c - L["vy"] * s, L["vx"] * s + L["vy"] * c], 1)
-    return np.hypot(*np.gradient(V, env.dt, axis=0).T)[2:].max()
+    A = np.gradient(V, env.dt, axis=0)
+    a_side = -s * A[:, 0] + c * A[:, 1]
+    return np.abs(a_side)[2:].max()
 
 
 def test_grip_limit():
-    """Total acceleration (world frame) never exceeds the tire limit (~1 g), and
-    random inputs never blow up the integration."""
+    """Sideways acceleration never exceeds the tire limit mu*g (the tires' peak force),
+    and random inputs never blow up the integration."""
     env = RacingEnv(off_track="grass")
+    mu_g = env.car_params["mu"] * 9.81
     env.reset(options={"v0": 2.0})
     for _ in range(400):
-        env.step([0.6, 0.6])                       # circle -> saturates and spins
-    assert _max_accel(env) < 1.15 * 9.81
+        env.step([0.6, 0.6])                       # circle -> saturates and slides
+    assert _max_lat_accel(env) < 1.05 * mu_g
     rng = np.random.default_rng(1)
     for ep in range(5):
         env.reset(seed=ep, options={"random_start": True, "v0": rng.uniform(0, 7)})
         for _ in range(300):
             _, _, _, _, info = env.step(rng.uniform(-1, 1, 2))
             assert all(np.isfinite([info["vx"], info["vy"], info["yaw_rate"]]))
-        assert _max_accel(env) < 1.15 * 9.81
+        assert _max_lat_accel(env) < 1.05 * mu_g
 
 
 def test_grass_slows_and_counts():
@@ -184,22 +188,23 @@ def test_off_track_uses_car_width():
 
 
 def test_mu_scale():
-    """Less friction -> less grip: the car can't hold the same circle."""
+    """Less friction -> less grip: hard cornering reaches less sideways acceleration."""
     def max_ay(mu_scale):
         env = RacingEnv(mu_scale=mu_scale)
-        env.reset(options={"v0": 4.0})
-        for _ in range(60):
-            _, _, _, _, info = env.step([0.4, 0.5])
-        return _max_accel(env)
+        _, info = env.reset(options={"v0": 5.0})
+        for _ in range(60):                        # hold 5 m/s, full left steering
+            _, _, _, _, info = env.step([np.clip(2.0 * (5.0 - info["vx"]), -1, 1), 1.0])
+        return _max_lat_accel(env)
     full, reduced = max_ay(1.0), max_ay(0.7)
     assert reduced < 0.8 * full
     env = RacingEnv()
+    base = env.car_params["mu"]
     env.reset(options={"mu_scale": 0.7})
-    assert abs(env.car_params["mu"] - 0.7) < 1e-12
+    assert abs(env.car_params["mu"] - 0.7 * base) < 1e-12
     env.reset()                                    # setting persists until changed
-    assert abs(env.car_params["mu"] - 0.7) < 1e-12
+    assert abs(env.car_params["mu"] - 0.7 * base) < 1e-12
     env.reset(options={"mu_scale": 1.0})
-    assert abs(env.car_params["mu"] - 1.0) < 1e-12
+    assert abs(env.car_params["mu"] - base) < 1e-12
 
 
 def test_info_for_ppo():

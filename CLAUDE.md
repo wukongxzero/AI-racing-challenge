@@ -148,9 +148,15 @@ directly. `reward` is for PPO; Pavan owns its design.
 - Car about 1:10 scale (F1TENTH-like).
 - Steering: max angle 0.42 rad, max rate 3.2 rad/s (F1TENTH defaults, starting values).
 - Top speed and acceleration limits: set once the car drives. NumPy car starting values
-  (provisional): top speed 8 m/s, acceleration 5 m/s², braking 8 m/s², mu 1.0 (≈1 g).
-- NumPy car is **all-wheel drive** (like the F1TENTH Traxxas 4x4): with rear-wheel drive,
-  full throttle used more than the rear tires' grip and the car spun in every corner.
+  (provisional): top speed 8 m/s (hard limit), acceleration 5 m/s², braking 8 m/s².
+- NumPy car = the team's planned dynamic bicycle model (Pacejka tires, see the models
+  document): acceleration is applied directly, no air drag, braking does not reduce
+  cornering grip (known simplification). Tire curve shape B, C, E from Liniger et al.
+  (2015), peak force = mu × axle load, mu = 0.9 (derived from the same paper). Max
+  sideways grip ≈ 0.8 g; the car understeers (needs more steering than geometry says).
+- **The NumPy car is the fallback final car**: if the real-wheel MuJoCo car isn't working
+  by ~Nov 25–26, we use the NumPy car instead of building a no-contact MuJoCo backup
+  (same tire equations, so the backup would add nothing). Proposed to the team.
 - Everyone uses only these car values, so all controllers race the same car.
 - Run modes: **evaluation** (simulation waits for each controller, so lap times don't depend
   on computer speed) and **game** (real time).
@@ -293,6 +299,7 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | Added `env.car_params` (read-only car values: wheelbase, mu, v_max, …) | Nathaly (speed profile), Berinay (model) | No – message drafted |
 | Nov 22 | Added optional track helpers (`heading`, `curvature`, `width`, `lookahead`, `heading_ahead`, `casadi_centerline`); `project` `s_prev` may be `None` | Everyone (optional) | No – message drafted |
 | Nov 22 | `info`/`obs` contents fixed (see 5.3); added `progress_rate`, `mu_scale` option | Pavan, Nathaly | No – message drafted |
-| Nov 22 | NumPy car is all-wheel drive; provisional speed/accel values (see 5.7) | Everyone (car behavior) | No – message drafted |
+| Nov 22 | NumPy car switched to the team's planned model (Pacejka tires, Liniger tire shape, mu 0.9, hard top speed, no drag); provisional speed/accel values (see 5.7) | Everyone (car behavior), Berinay (same equations as MPCC) | No – message drafted |
+| Nov 22 | Proposed: NumPy car is the fallback final car instead of a no-contact MuJoCo backup (see 5.7, 7) | Everyone (plan) | No – message drafted (needs team OK) |
 | Nov 22 | Team uses `pygame-ce` instead of `pygame` (`requirements.txt` changed): same `import pygame`, installs on every Python version incl. 3.15; don't install both | Nathaly (game), anyone running the game | No – message drafted |
 | Nov 22 | Track CSVs and previews moved from the repo's top level into `tracks/` (the agreed layout); `RacingEnv(track="training")` finds them | Anyone loading the CSVs by path | No – message drafted |
