@@ -309,7 +309,7 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | `track.project` now takes the car heading: `track.project(x, y, psi, s_prev)` (heading error needs it) | Anyone calling `project` directly; `RacingEnv` passes it automatically | Yes |
 | Nov 22 | Added `track.point_at(s)` – centerline point at progress s | Nathaly (Pure Pursuit lookahead) | Yes |
 | Nov 22 | Clarified sign: lateral offset positive to the left; MPCC must flip the common contouring formula | Berinay | Yes |
-| Nov 22 | Added `env.car_params` (read-only car values: wheelbase, mu, v_max, …), incl. `a_lat_max` = usable grip ≈ 0.89·mu·g (use this, not mu·g, for speed profiles) | Nathaly (speed profile), Berinay (model) | Yes (PR #1 notes) |
+| Nov 22 | Added `env.car_params` (read-only car values: wheelbase, mu, v_max, …), incl. `a_lat_max` = sideways grip the car actually reaches ≈ 0.89·mu·g (mu·g is ~12 % higher) | Nathaly (speed profile), Berinay (model) | Yes (PR #1 notes) |
 | Nov 22 | Added optional track helpers (`heading`, `curvature`, `width`, `lookahead`, `heading_ahead`, `casadi_centerline`); `project` `s_prev` may be `None` | Everyone (optional) | Yes (PR #1 notes) |
 | Nov 22 | `info`/`obs` contents fixed (see 5.3); obs has finite bounds; added `progress_rate`, `mu_scale` option | Pavan, Nathaly | Yes (PR #1 notes) |
 | Nov 22 | NumPy car switched to the team's planned model (Pacejka tires, Liniger tire shape, mu 0.9, hard top speed, no drag); provisional speed/accel values (see 5.7) | Everyone (car behavior), Berinay (same equations as MPCC) | Yes (PR #1 notes) |
