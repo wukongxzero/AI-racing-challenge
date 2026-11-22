@@ -161,7 +161,7 @@ directly. `reward` is for PPO; Pavan owns its design.
   sideways grip ≈ 0.8 g; the car understeers (needs more steering than geometry says).
 - **The NumPy car is the fallback final car**: if the real-wheel MuJoCo car isn't working
   by ~Nov 25–26, we use the NumPy car instead of building a no-contact MuJoCo backup
-  (same tire equations, so the backup would add nothing). Proposed to the team.
+  (same tire equations, so the backup would add nothing). Cristhian's plan; noted in PR #1.
 - Everyone uses only these car values, so all controllers race the same car.
 - Run modes: **evaluation** (simulation waits for each controller, so lap times don't depend
   on computer speed) and **game** (real time).
@@ -205,12 +205,10 @@ Ship a minimal working version first (track + car + reset/step), push it, then a
   1. **Real wheels first** – chassis + 4 wheels touching the floor, grip from MuJoCo's contact
      model. Start from an existing MuJoCo example car. Risk: contact tuning can be glitchy
      (jitter, bouncing, flipping, unrealistic grip).
-  2. **Backup: no wheel contact** – the car is one body sliding flat on the floor (forward,
-     sideways, rotation only); each physics step our code computes tire forces from the
-     Pacejka tire formula and applies them. No contact glitches, a proper grip limit, little
-     tuning, ~1–2 days to build. Switch to this around Nov 25–26 if the real-wheel car is still
-     glitchy.
-  3. If neither is ready by Nov 27, everyone stays on the NumPy car.
+  2. **Fallback: the NumPy car** – if the real-wheel car is still glitchy at the Nov 25–26
+     checkpoint, the NumPy car (same Pacejka tire equations) stays as the final car. This
+     replaces the earlier no-contact MuJoCo backup, which would have used the same
+     equations and added nothing (decided Nov 22, Cristhian).
   For MPCC: with real wheels, fit a bicycle model to logged test drives (1–2 days); with the
   backup, share the tire formula and its numbers directly. Keep
   the car behind a clear internal boundary so a second car implementation drops in without
@@ -301,11 +299,11 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | `track.project` now takes the car heading: `track.project(x, y, psi, s_prev)` (heading error needs it) | Anyone calling `project` directly; `RacingEnv` passes it automatically | Yes |
 | Nov 22 | Added `track.point_at(s)` – centerline point at progress s | Nathaly (Pure Pursuit lookahead) | Yes |
 | Nov 22 | Clarified sign: lateral offset positive to the left; MPCC must flip the common contouring formula | Berinay | Yes |
-| Nov 22 | Added `env.car_params` (read-only car values: wheelbase, mu, v_max, …), incl. `a_lat_max` = usable grip ≈ 0.89·mu·g (use this, not mu·g, for speed profiles) | Nathaly (speed profile), Berinay (model) | No – message drafted |
-| Nov 22 | Added optional track helpers (`heading`, `curvature`, `width`, `lookahead`, `heading_ahead`, `casadi_centerline`); `project` `s_prev` may be `None` | Everyone (optional) | No – message drafted |
-| Nov 22 | `info`/`obs` contents fixed (see 5.3); obs has finite bounds; added `progress_rate`, `mu_scale` option | Pavan, Nathaly | No – message drafted |
-| Nov 22 | NumPy car switched to the team's planned model (Pacejka tires, Liniger tire shape, mu 0.9, hard top speed, no drag); provisional speed/accel values (see 5.7) | Everyone (car behavior), Berinay (same equations as MPCC) | No – message drafted |
-| Nov 22 | Proposed: NumPy car is the fallback final car instead of a no-contact MuJoCo backup (see 5.7, 7) | Everyone (plan) | No – message drafted (needs team OK) |
-| Nov 22 | Added `render_mode` ("rgb_array" for videos, "human" window), `gym.make("Racing-v0")` (via it `check_env` passes all checks with zero warnings), `sim.video.record_episode` for MP4s; `requirements.txt` + `imageio[ffmpeg]`. Gymnasium's `RecordVideo` needs `moviepy`, which can't install on Python 3.15 | Pavan (videos, check_env), Nathaly | No – message drafted |
-| Nov 22 | Team uses `pygame-ce` instead of `pygame` (`requirements.txt` changed): same `import pygame`, installs on every Python version incl. 3.15; don't install both | Nathaly (game), anyone running the game | No – message drafted |
-| Nov 22 | Track CSVs and previews moved from the repo's top level into `tracks/` (the agreed layout); `RacingEnv(track="training")` finds them | Anyone loading the CSVs by path | No – message drafted |
+| Nov 22 | Added `env.car_params` (read-only car values: wheelbase, mu, v_max, …), incl. `a_lat_max` = usable grip ≈ 0.89·mu·g (use this, not mu·g, for speed profiles) | Nathaly (speed profile), Berinay (model) | In PR #1 notes; message pending |
+| Nov 22 | Added optional track helpers (`heading`, `curvature`, `width`, `lookahead`, `heading_ahead`, `casadi_centerline`); `project` `s_prev` may be `None` | Everyone (optional) | In PR #1 notes; message pending |
+| Nov 22 | `info`/`obs` contents fixed (see 5.3); obs has finite bounds; added `progress_rate`, `mu_scale` option | Pavan, Nathaly | In PR #1 notes; message pending |
+| Nov 22 | NumPy car switched to the team's planned model (Pacejka tires, Liniger tire shape, mu 0.9, hard top speed, no drag); provisional speed/accel values (see 5.7) | Everyone (car behavior), Berinay (same equations as MPCC) | In PR #1 notes; message pending |
+| Nov 22 | NumPy car is the fallback final car instead of a no-contact MuJoCo backup (Cristhian's decision; see 5.7, 7) | Everyone (plan) | In PR #1 notes; message pending |
+| Nov 22 | Added `render_mode` ("rgb_array" for videos, "human" window), `gym.make("Racing-v0")` (via it `check_env` passes all checks with zero warnings), `sim.video.record_episode` for MP4s; `requirements.txt` + `imageio[ffmpeg]`. Gymnasium's `RecordVideo` needs `moviepy`, which can't install on Python 3.15 | Pavan (videos, check_env), Nathaly | In PR #1 notes; message pending |
+| Nov 22 | Team uses `pygame-ce` instead of `pygame` (`requirements.txt` changed): same `import pygame`, installs on every Python version incl. 3.15; don't install both | Nathaly (game), anyone running the game | In PR #1 notes; message pending |
+| Nov 22 | Track CSVs and previews moved from the repo's top level into `tracks/` (the agreed layout); `RacingEnv(track="training")` finds them | Anyone loading the CSVs by path | In PR #1 notes; message pending |
