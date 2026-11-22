@@ -25,8 +25,9 @@ pip install -r requirements.txt
 pip install -e .                   # once: makes `import sim` work from any folder
 ```
 
-Without `pip install -e .`, scripts in `controllers/`, `game/` or `eval/` fail with "No module named
-'sim'". It uses the live files, so `git pull` keeps it up to date.
+`pip install -e .` lets every script in the repo import `sim`, including scripts inside `controllers/`,
+`game/` or `eval/`; without it they stop with "No module named 'sim'". Run it once; after a `git pull`,
+the new code is used automatically.
 
 Try it:
 
