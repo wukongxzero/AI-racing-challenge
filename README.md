@@ -22,12 +22,8 @@ controllers alone. The simulator doubles as a Pygame game.
 python3 -m venv .venv
 source .venv/bin/activate          # Windows (PowerShell): .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-pip install -e .                   # once: makes `import sim` work from any folder
+pip install -e .                   # once: makes `import sim` work from any folder (else "No module named 'sim'")
 ```
-
-`pip install -e .` lets every script in the repo import `sim`, including scripts inside `controllers/`,
-`game/` or `eval/`; without it they stop with "No module named 'sim'". Run it once; after a `git pull`,
-the new code is used automatically.
 
 Try it:
 
