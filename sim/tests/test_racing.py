@@ -542,6 +542,62 @@ def test_keyboard_teleop():
         raise AssertionError("assist without car_params accepted")
 
 
+def test_sideways_slide_slowed_by_tires():
+    """A car sliding sideways after a spin (little forward speed) is slowed by its tires at
+    about mu*g - its speed must not be turned into forward speed."""
+    import math
+    from sim.car_numpy import CarParams, NumpyCar
+    p = CarParams()
+    car = NumpyCar(p)
+    car.reset(0.0, 0.0, 0.0, vx=0.1, vy=2.0)
+    car.step(0.0, 0.0)
+    speed = math.hypot(car.state[3], car.state[4])
+    assert car.state[3] < 0.3                                    # not redirected forward
+    decel = (2.0 - speed) / p.dt                                 # ~ mu*g, never more
+    assert 0.6 * p.mu * 9.81 < decel < 1.1 * p.mu * 9.81
+    for _ in range(10):
+        car.step(0.0, 0.0)
+    assert math.hypot(car.state[3], car.state[4]) < 0.3          # comes to (nearly) a stop
+
+
+def test_understeer_gradient_matches_car():
+    """car_params['understeer_gradient'] (textbook formula) matches the simulated car in
+    steady cornering within 5 %, also with reduced friction."""
+    from sim.car_numpy import CarParams, NumpyCar
+    for mu_scale in (1.0, 0.7):
+        env = RacingEnv(mu_scale=mu_scale)
+        K = env.car_params["understeer_gradient"]
+        p = CarParams()
+        p.mu *= mu_scale
+        L = p.wheelbase
+        for v, d in ((3.0, 0.04), (5.0, 0.03)):
+            car = NumpyCar(p)
+            car.reset(0.0, 0.0, 0.0, vx=v, delta=d)
+            for _ in range(200):
+                car.step(np.clip(2.0 * (v - car.state[3]), -1, 1), d)
+            vx, r = car.state[3], car.state[5]
+            k_measured = (d - L * r / vx) / (vx * r)
+            assert abs(k_measured - K) < 0.05 * K, (mu_scale, v, k_measured, K)
+
+
+def test_car_interface():
+    """The NumPy car provides what sim/car_interface.py says every car must provide."""
+    from sim.car_interface import make_car
+    from sim.car_numpy import CarParams
+    car = make_car("numpy", CarParams())
+    for attr in ("p", "state", "reset", "step"):
+        assert hasattr(car, attr)
+    car.reset(1.0, 2.0, 0.5, vx=3.0)
+    car.step(0.5, 0.1, grass=False)
+    assert len(car.state) == 7 and all(np.isfinite(car.state))
+    try:
+        make_car("lego", CarParams())
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unknown car accepted")
+
+
 def test_mujoco_placeholder():
     try:
         RacingEnv(car="mujoco")

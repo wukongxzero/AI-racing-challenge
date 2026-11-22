@@ -23,9 +23,6 @@ from __future__ import annotations
 
 import numpy as np
 
-UNDERSTEER = 0.012   # s^2/m: the car needs (1 + 0.012 v^2 / L) times the geometric angle
-
-
 class KeyboardTeleop:
     def __init__(self, car_params=None, throttle_ramp_time=0.3, dt=0.05, steer_assist=False):
         self.car_params = car_params
@@ -44,7 +41,8 @@ class KeyboardTeleop:
         if speed < 1.0:
             return 1.0
         L = p["wheelbase"]
-        delta = L * p["a_lat_max"] / speed ** 2 * (1.0 + UNDERSTEER * speed ** 2 / L)
+        # angle for a circle at the grip limit: delta = L/R + K*a_y with R = v^2 / a_lat_max
+        delta = (L / speed ** 2 + p["understeer_gradient"]) * p["a_lat_max"]
         return min(1.0, delta / p["delta_max"])
 
     def action(self, up=False, down=False, left=False, right=False, speed=0.0):

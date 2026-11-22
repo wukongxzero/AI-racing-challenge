@@ -71,7 +71,7 @@ x_c, y_c = track.point_at(s)                                  # centerline point
 ```python
 from sim import RacingEnv                     # environment code lives in sim/
 track = env.track                             # the track object of an env
-env.car_params                                # read-only dict: wheelbase, mu, a_lat_max (usable grip), v_max, a_max, b_max, delta_max, ...
+env.car_params                                # read-only dict: wheelbase, mu, a_lat_max (usable grip), understeer_gradient, v_max, a_max, b_max, delta_max, ...
 track.project(x, y, psi)                      # s_prev=None searches the whole lap (use only at start)
 track.heading(s), track.curvature(s), track.width(s)          # road direction, curvature, (w_left, w_right)
 track.lookahead(s, dists), track.heading_ahead(s, dists, psi) # curvature / road direction ahead
@@ -136,8 +136,8 @@ directly. `reward` is for PPO; Pavan owns its design.
   - Fit a smooth periodic curve through the centerline, parameterized by arc length.
   - Projection searches **near the previous progress value** so it never jumps to a nearby
     section of track.
-  - Handle lap wrap-around; a lap only counts after covering most of the track (no cheating
-    by reversing over the line).
+  - Handle lap wrap-around; a lap only counts after covering the whole track (no cheating
+    by reversing over the line). Only a start on the start line times lap 1.
   - Off track = any part of the car past the road edge (|e_c| > half-width − half car width).
   - Must also be able to give MPCC the centerline as a smooth curve usable inside CasADi.
   - Provide `track.point_at(s)` (centerline point at progress s, wrapping around the lap).
@@ -320,3 +320,4 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | Repo installable: `pip install -e .` once (new `pyproject.toml`) so `import sim` works from `controllers/`, `game/`, `eval/` scripts | Everyone | Yes (PR #2 notes) |
 | Nov 22 | Laps: only a start on the start line times lap 1 (a mid-track start no longer records a short first lap); `lap_log` has `clean`; reset options accept `(low, high)` ranges and reject misspelled names; NaN/inf actions raise an error | Pavan (training starts), Nathaly (metrics) | Yes (PR #2 notes) |
 | Nov 22 | Added keyboard teleop `sim/teleop.py` (Up gas ramp, Down brake, Left/Right steer through the car's own limiter; optional speed-based steering assist, off by default) and `sim/examples/drive_keyboard.py`. Human-only input shaping documented in 5.2 (throttle ramp 0.3 s, optional assist) | Nathaly (game), anyone driving; report it in results | Yes (PR #2 notes) |
+| Nov 22 | Car physics fix: a car sliding sideways after a spin is slowed by its tires (was instantly turned into forward speed); `car_params` adds `understeer_gradient` (textbook formula, matches the car within 2 %); `sim/car_interface.py` defines what a car must provide (MuJoCo hand-over) | Everyone (car behavior after spins), Nathaly (understeer) | Yes (PR #2 notes) |

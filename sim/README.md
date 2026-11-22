@@ -9,7 +9,8 @@ Owner: Cristhian.
 [Laps and logs](#laps-and-logs) · [Track helpers](#track-helpers-envtrack) ·
 [Car](#car-envcar_params) · [CasADi car](#casadi-car-simcar_casadipy-for-mpcc) ·
 [Videos](#videos-simvideopy) · [Keyboard teleop](#keyboard-teleop-simteleoppy) ·
-[Viewer](#viewer-simviewerpy) · [Known simplifications](#known-simplifications)
+[Viewer](#viewer-simviewerpy) · [Adding a new car](#adding-a-new-car-mujoco) ·
+[Known simplifications](#known-simplifications)
 
 ## Quick start
 
@@ -68,7 +69,8 @@ version); don't install regular `pygame` in the same Python.
 - Lookahead point: `env.track.point_at(s + Ld)`; wheelbase etc. in `env.car_params`.
 - Speed profile: use `env.car_params["a_lat_max"]` (≈ 7.9 m/s², the grip the car really has) with a
   margin, **not μ·g** – with μ·g the car leaves the track in tight corners. Because the car
-  understeers, plain Pure Pursuit drifts wide in long corners.
+  understeers, plain Pure Pursuit drifts wide in long corners; multiplying the steering angle by
+  `1 + K·v²/L` with `K = env.car_params["understeer_gradient"]` compensates (see `drive_lap.py`).
 - Results: `env.lap_log` gives lap time, off-track count and `clean` per lap; every recorded lap is a
   full lap. Count clean laps (cutting a corner across the grass is slower but can gain a little).
 - Per-step logs: `env.get_log()` / `env.save_log(path)`.
@@ -126,9 +128,12 @@ F1TENTH geometry (m 3.74 kg, Iz 0.0471, lf 0.159, lr 0.171, wheelbase 0.33 m, wi
   (github.com/alexliniger/MPCC, identified on their 1:43 car); peak force = μ × axle load, μ = 0.9.
   Cross-checked against ETH ForzaETH's identified F1TENTH tires (similar handling).
 - Usable sideways grip `a_lat_max` ≈ 7.9 m/s² (0.89·μ·g; follows `mu_scale`). The car
-  **understeers**: it needs more steering than the geometry says, more so at speed.
+  **understeers**: it needs more steering than the geometry says, more so at speed. How much:
+  `understeer_gradient` K ≈ 0.010 rad per m/s² (textbook formula from the tire stiffness; a circle
+  of radius R at speed v needs δ = L/R + K·v²/R).
 - Acceleration is applied directly (`to_action` is exact), hard top speed, no reverse.
-- Steering: 0.42 rad max, 3.2 rad/s rate. Kinematic model below 0.3 m/s, blended up to 1 m/s.
+- Steering: 0.42 rad max, 3.2 rad/s rate. Kinematic model below 0.3 m/s total speed, blended up
+  to 1 m/s (a car sliding sideways after a spin is slowed by its tires, not redirected).
 - **Provisional:** a_max 5 m/s², brake 8 m/s², top speed 8 m/s, grass grip ×0.6 + extra drag.
 
 ## CasADi car (`sim/car_casadi.py`, for MPCC)
@@ -172,7 +177,16 @@ human's input gentler, never stronger than what controllers can command.
 color). Drawing only – it never steps physics – so the game can step several envs and draw
 them together.
 
+## Adding a new car (MuJoCo)
+`sim/car_interface.py` lists exactly what a car must provide (`p` car values, `reset`, `step`,
+`state`). Write a class that does that, add one line to `make_car()`, and `RacingEnv(car="mujoco")`
+works with no other change. Its car values (`p`) are what `env.car_params` shows, so MPCC and
+Pure Pursuit automatically get the new car's numbers.
+
 ## Known simplifications
 State these in the report: no load transfer between axles, no longitudinal tire slip, braking or
 accelerating doesn't reduce cornering grip, no air drag (top speed is a hard limit), tire shape from
 a 1:43 RC car scaled to the F1TENTH car's weight, and provisional speed/acceleration limits.
+Off track uses the car's width only (|e_c| > half road width − half car width, as agreed); when
+the car is at a large angle to the road (sliding), its corners can be up to ~10 cm further out, so
+off-track is counted slightly late. Measured: no difference in normal driving.

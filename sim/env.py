@@ -17,7 +17,8 @@ from dataclasses import replace
 
 import numpy as np
 
-from .car_numpy import CarParams, NumpyCar
+from .car_interface import make_car
+from .car_numpy import CarParams
 from .track import Track, load_track
 
 try:  # Gymnasium is optional; the env works the same without it.
@@ -97,10 +98,6 @@ class RacingEnv(_Base):
             raise ValueError(f"render_mode must be None, 'human' or 'rgb_array', not {render_mode!r}")
         self.render_mode = render_mode
         self._view = None                  # Pygame viewer, created on the first render
-        if car == "mujoco":
-            raise NotImplementedError("MuJoCo car not available yet - use car='numpy'.")
-        if car != "numpy":
-            raise ValueError(f"unknown car '{car}'")
         if off_track not in ("grass", "terminate"):
             raise ValueError("off_track must be 'grass' or 'terminate'")
 
@@ -109,9 +106,9 @@ class RacingEnv(_Base):
         self._mu_base = self._params.mu
         self.mu_scale = float(mu_scale)
         self._params.mu = self._mu_base * self.mu_scale   # also applied again at every reset
-        # The car sits behind a small internal boundary (reset / step / state),
-        # so the MuJoCo car can drop in here without changing anything else.
-        self._car = NumpyCar(self._params)
+        # The car sits behind a small boundary (sim/car_interface.py: reset / step / state),
+        # so the MuJoCo car drops in here without changing anything else.
+        self._car = make_car(car, self._params)
         self.dt = self._params.dt
         self.off_track_mode = off_track
         self.max_laps = max_laps
