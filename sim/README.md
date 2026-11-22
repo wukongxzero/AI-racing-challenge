@@ -161,7 +161,7 @@ Gymnasium's `RecordVideo` wrapper also works with `render_mode="rgb_array"`, but
 
 ## Keyboard teleop (`sim/teleop.py`)
 Drive it yourself: `python sim/examples/drive_keyboard.py` (Up = gas, Down = brake, Left/Right = steer,
-Z = close-up / whole track, A = steering assist, R = restart, Esc = quit). It starts in a 3× close-up
+Z = close-up / whole track, A = steering assist, [ / ] = assist weaker / stronger, R = restart, Esc = quit). It starts in a 3× close-up
 that follows the car; the screen shows lap time, last and best lap, speed, and the gas and steering
 commands being sent. Keys are read right before each step (no extra delay). `--log human.csv` saves
 every attempt as `human_<n>.csv` (every step) and `human_<n>_laps.csv` (lap times, clean), the same
@@ -176,7 +176,7 @@ The human goes through the same car limits as every controller. **Human-only inp
 it in results):** gas ramps up over 0.3 s so on/off keys don't jerk the car (`throttle_ramp_time=0`
 turns it off); steering is full left / right / straight; the steering assist (**on by default**:
 play-testing showed the car isn't drivable with on/off keys without it) caps the steering request at
-speed to what the tires can use. All of these only make the
+speed to `assist_margin` × the angle the tires can use (default ×1.4, being tuned by play-testing). All of these only make the
 human's input gentler, never stronger than what controllers can command.
 
 ## Viewer (`sim/viewer.py`)

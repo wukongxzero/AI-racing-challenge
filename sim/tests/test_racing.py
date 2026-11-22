@@ -535,6 +535,10 @@ def test_keyboard_teleop():
         s = assist.action(left=True, speed=v)[1]
         assert 0.0 < s <= 1.0
     assert assist.action(left=True, speed=8.0)[1] < assist.action(left=True, speed=3.0)[1]
+    strong = KeyboardTeleop(env.car_params, assist_margin=1.0)
+    weak = KeyboardTeleop(env.car_params, assist_margin=1.4)
+    s1, s2 = strong.action(left=True, speed=6.0)[1], weak.action(left=True, speed=6.0)[1]
+    assert s2 > s1 and abs(min(1.0, 1.4 * s1) - s2) < 1e-6      # margin scales the allowed steering
     try:
         KeyboardTeleop(steer_assist=True)
     except ValueError:

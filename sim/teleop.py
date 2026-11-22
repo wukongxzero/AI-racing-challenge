@@ -19,16 +19,21 @@ with on/off keys without it; report it in results): at speed, a full Left/Right 
 the steering angle that uses the tires' grip (a_lat_max), so holding a key can't throw the car
 into a slide. It only ever asks for LESS steering than without it, so it gives no advantage
 over the controllers. steer_assist=False turns it off.
+assist_margin sets how strong it is: the allowed steering is assist_margin x the grip-limit
+angle (1.0 = exactly the steady-cornering limit, strongest; higher = more steering allowed,
+for turning in and corrections). 1.4 is a first guess, to be tuned by play-testing.
 """
 from __future__ import annotations
 
 import numpy as np
 
 class KeyboardTeleop:
-    def __init__(self, car_params=None, throttle_ramp_time=0.3, dt=0.05, steer_assist=True):
+    def __init__(self, car_params=None, throttle_ramp_time=0.3, dt=0.05, steer_assist=True,
+                 assist_margin=1.4):
         self.car_params = car_params
         self.throttle_step = dt / throttle_ramp_time if throttle_ramp_time > 0 else 1.0
         self.steer_assist = steer_assist
+        self.assist_margin = assist_margin
         self.throttle = 0.0
         if steer_assist and car_params is None:
             raise ValueError("the steering assist needs car_params: KeyboardTeleop(env.car_params), "
@@ -45,7 +50,7 @@ class KeyboardTeleop:
         L = p["wheelbase"]
         # angle for a circle at the grip limit: delta = L/R + K*a_y with R = v^2 / a_lat_max
         delta = (L / speed ** 2 + p["understeer_gradient"]) * p["a_lat_max"]
-        return min(1.0, delta / p["delta_max"])
+        return min(1.0, self.assist_margin * delta / p["delta_max"])
 
     def action(self, up=False, down=False, left=False, right=False, speed=0.0):
         """The [throttle, steering] command for this step from which arrow keys are held."""

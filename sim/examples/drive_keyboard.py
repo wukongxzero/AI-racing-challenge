@@ -6,7 +6,7 @@
     python sim/examples/drive_keyboard.py --log human.csv  # save each attempt for the results
 
 Keys: Up = gas, Down = brake, Left/Right = steer, Z = close-up / whole track,
-      A = steering assist on/off, R = restart, Esc = quit.
+      A = steering assist on/off, [ / ] = assist weaker / stronger, R = restart, Esc = quit.
 Same car, same limits and the same 20 Hz commands as every controller; off track the car
 slows on the grass and the event is counted. With --log, every attempt (ended by R or Esc)
 is saved as <name>_<n>.csv (every step, same format as env.save_log) and <name>_<n>_laps.csv
@@ -47,7 +47,7 @@ def hud(info, env, teleop, action, zoom):
     line1 = (f"lap {info['lap'] + 1}   time {fmt(info['lap_timer'])}   last {fmt(last)}   "
              f"best {fmt(best)}   v {info['vx']:4.1f} m/s")
     line2 = (f"gas {action[0]:+.2f}  steer {action[1]:+.2f}   off-track {info['off_track_count']}   "
-             f"assist {'ON' if teleop.steer_assist else 'off'}   "
+             f"assist {'ON x' + format(teleop.assist_margin, '.1f') if teleop.steer_assist else 'off'}   "
              f"[Z] view  [A] assist  [R] restart  [Esc] quit")
     return line1 + "\n" + line2
 
@@ -86,6 +86,10 @@ def main():
             teleop.reset()
         if pressed(pygame.K_a):
             teleop.steer_assist = not teleop.steer_assist
+        if pressed(pygame.K_LEFTBRACKET):                          # weaker assist = more steering
+            teleop.assist_margin = round(teleop.assist_margin + 0.1, 1)
+        if pressed(pygame.K_RIGHTBRACKET):                         # stronger, but never below x1.0
+            teleop.assist_margin = round(max(1.0, teleop.assist_margin - 0.1), 1)
         if pressed(pygame.K_z):
             view.set_zoom(1.0 if view.zoom > 1.0 else CLOSE_UP)
         prev_keys = keys
