@@ -338,6 +338,8 @@ class RacingEnv(_Base):
             # off track and laps
             "off_track": self._off, "off_track_count": self.off_track_count,
             "lap": self.lap, "lap_times": list(self.lap_times), "lap_completed": lap_completed,
+            # time in the current lap (s); NaN until a lap is being timed (mid-track start)
+            "lap_timer": (self.t - self._lap_start_t) if self._lap_start_t is not None else float("nan"),
             "mu_scale": self.mu_scale,
         }
         return info

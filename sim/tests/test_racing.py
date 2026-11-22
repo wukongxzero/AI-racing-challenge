@@ -598,6 +598,62 @@ def test_car_interface():
         raise AssertionError("unknown car accepted")
 
 
+def test_viewer_close_up_follows_car():
+    """zoom > 1 draws the car bigger and keeps it in the middle of the window; text may have
+    several lines; zoom 1 still shows the whole track."""
+    try:
+        import pygame  # noqa: F401
+    except ImportError:
+        print("  (pygame not installed - skipped)")
+        return
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    from sim.viewer import TopDownView
+    env = RacingEnv()
+    _, info = env.reset(options={"s0": 40.0})
+    view = TopDownView(env.track, window=(400, 300), zoom=3.0, headless=True)
+    car = {"x": info["x"], "y": info["y"], "psi": info["psi"], "color": (255, 0, 0)}
+    view.draw([car], text="line one" + chr(10) + "line two")
+    img = view.frame()
+    red = np.argwhere((img[:, :, 0] == 255) & (img[:, :, 1] == 0) & (img[:, :, 2] == 0))
+    assert len(red) > 50                                      # car drawn big (close-up)
+    assert np.all(np.abs(red.mean(0) - [150, 200]) < 3)      # and in the window centre
+    whole = TopDownView(env.track, window=(400, 300), zoom=1.0, headless=True)
+    assert abs(view.scale - 3.0 * whole.scale) < 1e-9
+    view.set_zoom(1.0)
+    assert view.background.get_size() == (400, 300)
+
+
+def test_lap_timer():
+    """info['lap_timer'] counts the current lap and restarts at the line; NaN until a lap
+    is being timed after a mid-track start."""
+    env = RacingEnv(max_laps=1, time_limit=60, log=False)
+    _, info = env.reset()
+    assert info["lap_timer"] == 0.0
+    info, _, _ = _drive(env, info, 3000)
+    assert env.lap == 1 and 0.0 <= info["lap_timer"] < env.dt
+    _, info = env.reset(options={"s0": 50.0})
+    assert info["lap_timer"] != info["lap_timer"]            # NaN
+
+
+def test_keyboard_attempt_log(tmp_path=None):
+    """drive_keyboard --log saves every step and one row per lap, like the controllers."""
+    from sim.examples.drive_keyboard import save_attempt
+    folder = str(tmp_path or os.path.dirname(__file__))
+    env = RacingEnv(max_laps=1, time_limit=60)
+    _, info = env.reset()
+    _drive(env, info, 3000)
+    steps = save_attempt(env, os.path.join(folder, "_human.csv"), 1)
+    laps = os.path.join(folder, "_human_1_laps.csv")
+    with open(laps) as f:
+        rows = f.read().strip().splitlines()
+    assert rows[0] == "lap,lap_time,off_track_count,clean" and len(rows) == 2
+    with open(steps) as f:
+        assert f.readline().startswith("t,x,y,psi")
+    if tmp_path is None:
+        os.remove(steps)
+        os.remove(laps)
+
+
 def test_mujoco_placeholder():
     try:
         RacingEnv(car="mujoco")

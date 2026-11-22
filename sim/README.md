@@ -71,10 +71,11 @@ version); don't install regular `pygame` in the same Python.
   margin, **not μ·g** – with μ·g the car leaves the track in tight corners. Because the car
   understeers, plain Pure Pursuit drifts wide in long corners; multiplying the steering angle by
   `1 + K·v²/L` with `K = env.car_params["understeer_gradient"]` compensates (see `drive_lap.py`).
-- Results: `env.lap_log` gives lap time, off-track count and `clean` per lap; every recorded lap is a
+- Results: `env.lap_log` gives lap time, off-track count and `clean` per lap; `info["lap_timer"]`
+  is the time in the current lap (for a game HUD); every recorded lap is a
   full lap. Count clean laps (cutting a corner across the grass is slower but can gain a little).
 - Per-step logs: `env.get_log()` / `env.save_log(path)`.
-- Game: the viewer draws several cars at once ("ghosts"); the human uses `sim.teleop`, whose
+- Game: the viewer draws several cars at once ("ghosts"), whole track or a close-up that follows a car; the human uses `sim.teleop`, whose
   input shaping must be reported in results (see [Keyboard teleop](#keyboard-teleop-simteleoppy)).
 
 ## Environment options
@@ -104,7 +105,8 @@ version); don't install regular `pygame` in the same Python.
 prev_throttle, prev_steer, kappa_ahead_0.5 … kappa_ahead_3`.
 `info` has the same values by name plus `t, heading_ahead` (road direction ahead relative to
 the car), `progress` (unwrapped m), `ds, progress_rate` (m/s along the track – negative =
-going backwards, ≈0 = stalled), `lap, lap_times, lap_completed, off_track, off_track_count, mu_scale`.
+going backwards, ≈0 = stalled), `lap, lap_times, lap_completed, lap_timer` (time in the current lap;
+NaN until a lap is timed after a mid-track start), `off_track, off_track_count, mu_scale`.
 
 ## Laps and logs
 - A lap counts at each start-line crossing (time interpolated inside the 50 ms step).
@@ -159,7 +161,11 @@ Gymnasium's `RecordVideo` wrapper also works with `render_mode="rgb_array"`, but
 
 ## Keyboard teleop (`sim/teleop.py`)
 Drive it yourself: `python sim/examples/drive_keyboard.py` (Up = gas, Down = brake, Left/Right = steer,
-A = steering assist, R = restart, Esc = quit). For the game:
+Z = close-up / whole track, A = steering assist, R = restart, Esc = quit). It starts in a 3× close-up
+that follows the car; the screen shows lap time, last and best lap, speed, and the gas and steering
+commands being sent. Keys are read right before each step (no extra delay). `--log human.csv` saves
+every attempt as `human_<n>.csv` (every step) and `human_<n>_laps.csv` (lap times, clean), the same
+data the controllers produce. For the game:
 
 ```python
 from sim.teleop import KeyboardTeleop
@@ -174,8 +180,10 @@ human's input gentler, never stronger than what controllers can command.
 
 ## Viewer (`sim/viewer.py`)
 `TopDownView(track).draw(cars, text)` draws any number of cars (dicts with x, y, psi,
-color). Drawing only – it never steps physics – so the game can step several envs and draw
-them together.
+color) and text (several lines with `
+`). `zoom=3` (or `set_zoom(3)`) shows a close-up that
+follows the first car (or `draw(..., center=(x, y))`); `zoom=1` shows the whole track. Drawing only –
+it never steps physics – so the game can step several envs and draw them together.
 
 ## Adding a new car (MuJoCo)
 `sim/car_interface.py` lists exactly what a car must provide (`p` car values, `reset`, `step`,
