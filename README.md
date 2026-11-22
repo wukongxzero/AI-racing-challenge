@@ -42,6 +42,19 @@ obs, reward, terminated, truncated, info = env.step([throttle, steering])
 - Agreed interface, timeline and change log: [`CLAUDE.md`](CLAUDE.md)
 - Try it: `python sim/examples/drive_lap.py` · tests: `python sim/tests/test_racing.py`
 
+## Tests
+
+GitHub runs the environment's tests automatically on every pull request and every push to `main`
+(on Python 3.12 and 3.15). The result shows on the pull request:
+
+- **Green check** – the shared environment still works; safe to merge.
+- **Red X** – something broke. Click **Details** next to it to see which test failed and why.
+
+Run the same tests on your computer before pushing: `python sim/tests/test_racing.py` (a few seconds).
+They cover the track math, the car physics (grip and steering limits), laps and off-track rules, the
+Gymnasium interface, the CasADi car and rendering. The workflow lives in
+[`.github/workflows/tests.yml`](.github/workflows/tests.yml); tests for your own code can be added there too.
+
 ## Setup
 
 ```bash
