@@ -97,7 +97,11 @@ F = discretize(f, dt=0.05)            # x_next = F(x, u): one 50 ms step (RK4, 1
 x0 = state_from_info(info)            # current state from the env
 ```
 Steering is an input here but rate-limited in the simulator: add |δ_k − δ_(k−1)| ≤ 3.2·dt and start
-from `info["delta"]`. Below 1 m/s the simulator blends to the kinematic model. Measured on one laptop:
+from `info["delta"]`. Below 1 m/s the simulator blends to the kinematic model.
+**The car understeers:** at 5 m/s it turns only ~53 % as sharply as the kinematic model (and
+ψ̇ = v/L·tan δ) predicts, so a kinematic MPCC plans turns the car can't make and runs wide at
+speed. Use `dynamic_model` to match the simulator, or treat kinematic vs dynamic as a
+model-mismatch experiment. Our x, y are at the centre of mass, not the rear axle. Measured on one laptop:
 IPOPT solves a simple tracking MPC with this model in ~18 ms (1 s horizon) / ~33 ms (2 s) warm-started.
 
 ## Videos (`sim/video.py`)
