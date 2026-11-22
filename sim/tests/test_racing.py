@@ -529,6 +529,7 @@ def test_keyboard_teleop():
     env.reset(options={"v0": 3.0})                             # same limiter as controllers
     _, _, _, _, info = env.step(tele.action(left=True))
     assert abs(info["delta"] - 3.2 * 0.05) < 1e-9
+    assert KeyboardTeleop(env.car_params).steer_assist            # on by default (play-tested)
     assist = KeyboardTeleop(env.car_params, steer_assist=True)
     for v in (0.0, 2.0, 5.0, 8.0):
         s = assist.action(left=True, speed=v)[1]

@@ -14,23 +14,25 @@ Keys:
     none    coast (throttle 0)
     Left / Right   full steering command left / right; release = straight.
 
-Optional steering assist (off by default, for the human car only; report it if used):
-at speed, a full Left/Right asks only for the steering angle that uses the tires' grip
-(a_lat_max), so holding a key can't throw the car into a slide. It only ever asks for LESS
-steering than without it, so it gives no advantage over the controllers.
+Steering assist (ON by default for the human - play-testing showed the car is not drivable
+with on/off keys without it; report it in results): at speed, a full Left/Right asks only for
+the steering angle that uses the tires' grip (a_lat_max), so holding a key can't throw the car
+into a slide. It only ever asks for LESS steering than without it, so it gives no advantage
+over the controllers. steer_assist=False turns it off.
 """
 from __future__ import annotations
 
 import numpy as np
 
 class KeyboardTeleop:
-    def __init__(self, car_params=None, throttle_ramp_time=0.3, dt=0.05, steer_assist=False):
+    def __init__(self, car_params=None, throttle_ramp_time=0.3, dt=0.05, steer_assist=True):
         self.car_params = car_params
         self.throttle_step = dt / throttle_ramp_time if throttle_ramp_time > 0 else 1.0
         self.steer_assist = steer_assist
         self.throttle = 0.0
         if steer_assist and car_params is None:
-            raise ValueError("steer_assist needs car_params (pass env.car_params)")
+            raise ValueError("the steering assist needs car_params: KeyboardTeleop(env.car_params), "
+                             "or steer_assist=False")
 
     def reset(self):
         self.throttle = 0.0

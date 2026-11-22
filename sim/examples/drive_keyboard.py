@@ -2,7 +2,7 @@
 
     python sim/examples/drive_keyboard.py                  # training track, view follows the car
     python sim/examples/drive_keyboard.py --track hidden
-    python sim/examples/drive_keyboard.py --assist         # start with the steering assist on
+    python sim/examples/drive_keyboard.py --no-assist      # start with the steering assist off
     python sim/examples/drive_keyboard.py --log human.csv  # save each attempt for the results
 
 Keys: Up = gas, Down = brake, Left/Right = steer, Z = close-up / whole track,
@@ -55,7 +55,7 @@ def hud(info, env, teleop, action, zoom):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--track", default="training")
-    ap.add_argument("--assist", action="store_true", help="start with the steering assist on")
+    ap.add_argument("--no-assist", action="store_true", help="start with the steering assist off")
     ap.add_argument("--log", default=None, help="save every attempt, e.g. --log human.csv")
     ap.add_argument("--seconds", type=float, default=None, help="quit after this many seconds")
     args = ap.parse_args()
@@ -65,7 +65,7 @@ def main():
     p = env.car_params
     view = TopDownView(env.track, car_length=p["length"], car_width=p["width"], zoom=CLOSE_UP,
                        caption="RacingEnv - arrow keys to drive")
-    teleop = KeyboardTeleop(p, steer_assist=args.assist)
+    teleop = KeyboardTeleop(p, steer_assist=not args.no_assist)   # assist on by default
     obs, info = env.reset()
     attempt = 1
     action = teleop.action()

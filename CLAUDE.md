@@ -103,8 +103,9 @@ directly. `reward` is for PPO; Pavan owns its design.
   Human-only input shaping (`sim/teleop.py`; part of the experimental setup, report it):
   the throttle command ramps 0 -> full in 0.3 s while Up is held (on/off keys would
   otherwise jerk the car; `throttle_ramp_time=0` turns it off), steering is full
-  left / right / straight, and an optional speed-based steering assist (off by default)
-  caps the steering request at speed. All of these only make the human's input gentler,
+  left / right / straight, and a speed-based steering assist caps the steering request at
+  speed - ON by default (play-testing Nov 22: the car is not drivable with on/off keys
+  without it; `steer_assist=False` turns it off). All of these only make the human's input gentler,
   never stronger than what the controllers can command.
 
 ### 5.3 Observations / car state
@@ -322,3 +323,4 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | Added keyboard teleop `sim/teleop.py` (Up gas ramp, Down brake, Left/Right steer through the car's own limiter; optional speed-based steering assist, off by default) and `sim/examples/drive_keyboard.py`. Human-only input shaping documented in 5.2 (throttle ramp 0.3 s, optional assist) | Nathaly (game), anyone driving; report it in results | Yes (PR #2 notes) |
 | Nov 22 | Car physics fix: a car sliding sideways after a spin is slowed by its tires (was instantly turned into forward speed); `car_params` adds `understeer_gradient` (textbook formula, matches the car within 2 %); `sim/car_interface.py` defines what a car must provide (MuJoCo hand-over) | Everyone (car behavior after spins), Nathaly (understeer) | Yes (PR #2 notes) |
 | Nov 22 | Teleop/viewer polish: `info["lap_timer"]` (time in the current lap); viewer close-up that follows a car (`zoom`), multi-line text; `drive_keyboard.py` reads keys without delay, starts in close-up (Z toggles), shows timing + commands, `--log` saves each attempt like the controllers' logs | Nathaly (game HUD, results), anyone driving | Pending push (PR #2) |
+| Nov 22 | Human steering assist ON by default (play-tested: needed with on/off keys); report it as part of the human setup | Nathaly (game), results | Pending push (PR #2) |

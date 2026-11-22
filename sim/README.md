@@ -169,13 +169,14 @@ data the controllers produce. For the game:
 
 ```python
 from sim.teleop import KeyboardTeleop
-teleop = KeyboardTeleop(env.car_params)                 # steer_assist=True for the optional assist
+teleop = KeyboardTeleop(env.car_params)                 # steering assist on (steer_assist=False: off)
 action = teleop.action_from_pygame(speed=info["vx"])    # same [throttle, steering] as the controllers
 ```
 The human goes through the same car limits as every controller. **Human-only input shaping (report
 it in results):** gas ramps up over 0.3 s so on/off keys don't jerk the car (`throttle_ramp_time=0`
-turns it off); steering is full left / right / straight; the optional steering assist (off by
-default) caps the steering request at speed to what the tires can use. All of these only make the
+turns it off); steering is full left / right / straight; the steering assist (**on by default**:
+play-testing showed the car isn't drivable with on/off keys without it) caps the steering request at
+speed to what the tires can use. All of these only make the
 human's input gentler, never stronger than what controllers can command.
 
 ## Viewer (`sim/viewer.py`)
