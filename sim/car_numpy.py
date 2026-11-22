@@ -49,8 +49,11 @@ class CarParams:
     # steering (team values)
     delta_max: float = 0.42       # rad
     delta_rate_max: float = 3.2   # rad/s
-    # tires: curve shape B, C, E from Liniger, Domahidi & Morari (2015) (verify against the
-    # paper); peak force D = mu * axle load. mu 0.9 = D / axle load in that paper.
+    # tires: tire model (simplified Pacejka, no E term) from Liniger, Domahidi & Morari (2015).
+    # The paper prints no numbers; B, C (and the D values used to get mu) are the identified
+    # 1:43 car values in the authors' public code, github.com/alexliniger/MPCC
+    # (C++/Params/model.json; checked Nov 22). Peak force D = mu * axle load for our car;
+    # mu 0.9 = D / axle load of their car (front 0.192 N / 0.214 N, rear 0.1737 N / 0.188 N).
     mu: float = 0.9
     B_f: float = 2.579
     C_f: float = 1.2

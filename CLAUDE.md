@@ -151,8 +151,10 @@ directly. `reward` is for PPO; Pavan owns its design.
   (provisional): top speed 8 m/s (hard limit), acceleration 5 m/s², braking 8 m/s².
 - NumPy car = the team's planned dynamic bicycle model (Pacejka tires, see the models
   document): acceleration is applied directly, no air drag, braking does not reduce
-  cornering grip (known simplification). Tire curve shape B, C, E from Liniger et al.
-  (2015), peak force = mu × axle load, mu = 0.9 (derived from the same paper). Max
+  cornering grip (known simplification). Tire model from Liniger et al. (2015); the paper
+  prints no numbers, so B, C come from the authors' public code (github.com/alexliniger/MPCC,
+  `C++/Params/model.json`, identified on their 1:43 car; checked Nov 22). Peak force =
+  mu × axle load, mu = 0.9 (their D / axle load). Cite both paper and repo in the report. Max
   sideways grip ≈ 0.8 g; the car understeers (needs more steering than geometry says).
 - **The NumPy car is the fallback final car**: if the real-wheel MuJoCo car isn't working
   by ~Nov 25–26, we use the NumPy car instead of building a no-contact MuJoCo backup

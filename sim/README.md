@@ -64,7 +64,8 @@ in arc length; `length` = lap length.
 ## Car (`env.car_params`)
 The team's planned dynamic bicycle model (equations at the top of `sim/car_numpy.py`),
 F1TENTH geometry (m 3.74 kg, Iz 0.0471, lf 0.159, lr 0.171, wheelbase 0.33 m, width 0.31 m).
-- Tires: Pacejka formula, curve shape from Liniger et al. (2015), peak force = mu × axle load,
+- Tires: Pacejka formula (Liniger et al. 2015); curve shape B, C from the authors' public code
+  (github.com/alexliniger/MPCC, identified on their 1:43 car); peak force = mu × axle load,
   mu = 0.9. Usable sideways grip `a_lat_max` ≈ 7.9 m/s² (0.89·mu·g; it follows `mu_scale`) –
   use this, not mu·g, for speed profiles, and keep a margin. The car **understeers**: it needs more steering than
   the geometry says, more so at speed (the example controller compensates).
