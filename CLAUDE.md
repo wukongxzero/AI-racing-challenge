@@ -100,6 +100,12 @@ directly. `reward` is for PPO; Pavan owns its design.
 - **Control rate: 20 Hz for every controller** (command held 50 ms). Berinay confirmed.
 - Human keyboard teleop: arrow keys produce the same commands and go through the same
   limiter as the controllers.
+  Human-only input shaping (`sim/teleop.py`; part of the experimental setup, report it):
+  the throttle command ramps 0 -> full in 0.3 s while Up is held (on/off keys would
+  otherwise jerk the car; `throttle_ramp_time=0` turns it off), steering is full
+  left / right / straight, and an optional speed-based steering assist (off by default)
+  caps the steering request at speed. All of these only make the human's input gentler,
+  never stronger than what the controllers can command.
 
 ### 5.3 Observations / car state
 - Car state: position, heading, forward and sideways speed, yaw rate, current steering angle.
@@ -313,4 +319,4 @@ identification by least squares (fitting the bicycle model) and the model-mismat
 | Nov 22 | GitHub Actions runs the sim tests on every pull request and push to `main` (`.github/workflows/tests.yml`, Python 3.12 + 3.15); main README points to the environment docs | Everyone (PRs show a pass/fail check) | Yes (PR #2 notes) |
 | Nov 22 | Repo installable: `pip install -e .` once (new `pyproject.toml`) so `import sim` works from `controllers/`, `game/`, `eval/` scripts | Everyone | Yes (PR #2 notes) |
 | Nov 22 | Laps: only a start on the start line times lap 1 (a mid-track start no longer records a short first lap); `lap_log` has `clean`; reset options accept `(low, high)` ranges and reject misspelled names; NaN/inf actions raise an error | Pavan (training starts), Nathaly (metrics) | Yes (PR #2 notes) |
-| Nov 22 | Added keyboard teleop `sim/teleop.py` (Up gas ramp, Down brake, Left/Right steer through the car's own limiter; optional speed-based steering assist, off by default) and `sim/examples/drive_keyboard.py` | Nathaly (game), anyone driving | Pending (next PR) |
+| Nov 22 | Added keyboard teleop `sim/teleop.py` (Up gas ramp, Down brake, Left/Right steer through the car's own limiter; optional speed-based steering assist, off by default) and `sim/examples/drive_keyboard.py`. Human-only input shaping documented in 5.2 (throttle ramp 0.3 s, optional assist) | Nathaly (game), anyone driving; report it in results | Pending (next PR) |
