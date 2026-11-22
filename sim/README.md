@@ -75,6 +75,10 @@ version); don't install regular `pygame` in the same Python.
   is the time in the current lap (for a game HUD); every recorded lap is a
   full lap. Count clean laps (cutting a corner across the grass is slower but can gain a little).
 - Per-step logs: `env.get_log()` / `env.save_log(path)`.
+- Ideas for the game, from how racing games handle beginners (your call): a braking cue ("BRAKE" or
+  the road ahead colored red; `KeyboardTeleop.speed_limit(s)` gives the speed to brake to), assist
+  presets (Beginner / Intermediate / Expert), drawing at 60 frames/s between the 20 Hz steps, and
+  a short human-trial protocol (practice laps, best clean lap of N, assists used).
 - Game: the viewer draws several cars at once ("ghosts"), whole track or a close-up that follows a car; the human uses `sim.teleop`, whose
   input shaping must be reported in results (see [Keyboard teleop](#keyboard-teleop-simteleoppy)).
 
@@ -165,8 +169,9 @@ Z = close-up / whole track, A = steering assist, [ / ] = assist weaker / stronge
 R = restart, Esc = quit). It starts in a 3× close-up
 that follows the car; the screen shows lap time, last and best lap, speed, and the gas and steering
 commands being sent. Keys are read right before each step (no extra delay). `--log human.csv` saves
-every attempt as `human_<n>.csv` (every step) and `human_<n>_laps.csv` (lap times, clean), the same
-data the controllers produce. For the game:
+every attempt as `human_<n>.csv` (every step, plus the assist settings at each step) and
+`human_<n>_laps.csv` (lap times, clean, and which assists were used in each lap), the same data the
+controllers produce plus what results must report about the human's assists. For the game:
 
 ```python
 from sim.teleop import KeyboardTeleop

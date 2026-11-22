@@ -10,14 +10,17 @@ Keys: Up = gas, Down = brake, Left/Right = steer, Z = close-up / whole track,
       B = braking assist on/off (brakes for you before corners), R = restart, Esc = quit.
 Same car, same limits and the same 20 Hz commands as every controller; off track the car
 slows on the grass and the event is counted. With --log, every attempt (ended by R or Esc)
-is saved as <name>_<n>.csv (every step, same format as env.save_log) and <name>_<n>_laps.csv
-(lap time, off-track count, clean) - the same data the controllers produce.
+is saved as <name>_<n>.csv (every step, same columns as env.save_log plus the assist settings)
+and <name>_<n>_laps.csv (lap time, off-track count, clean, assists used) - the same data the
+controllers produce, plus what the results must report about the human's assists.
 """
 import argparse
 import csv
 import os
 import sys
 import time
+
+import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from sim import RacingEnv  # noqa: E402
@@ -27,16 +30,51 @@ from sim.viewer import TopDownView  # noqa: E402
 CLOSE_UP = 3.0          # zoom of the follow view
 
 
-def save_attempt(env, log_path, n):
-    """Save one attempt: every step + one row per lap. Returns the step-log path."""
+def assist_state(teleop):
+    """The human's assist settings right now (recorded every step for honest reporting)."""
+    return (bool(teleop.steer_assist), float(teleop.assist_margin), bool(teleop.brake_assist))
+
+
+def describe_assists(states):
+    """Readable summary of the assist settings used, e.g. 'steer x1.4 + brake'."""
+    def one(st):
+        steer, margin, brake = st
+        parts = [f"steer x{margin:.1f}"] if steer else []
+        parts += ["brake"] if brake else []
+        return " + ".join(parts) or "none"
+    names = list(dict.fromkeys(one(st) for st in states))         # unique, in order of use
+    return names[0] if len(names) == 1 else "changed: " + " / ".join(names)
+
+
+def save_attempt(env, log_path, n, assists=None):
+    """Save one attempt: every step + one row per lap. `assists` = assist_state() for every
+    logged step (row 0 = after reset); it adds the assist settings to both files so results
+    can say exactly which assists the human used. Returns the step-log path."""
     stem, _ = os.path.splitext(log_path)
     steps_path, laps_path = f"{stem}_{n}.csv", f"{stem}_{n}_laps.csv"
-    env.save_log(steps_path)
+    log = env.get_log()
+    rows = len(log["t"])
+    if assists is not None and len(assists) != rows:
+        raise ValueError(f"{len(assists)} assist records for {rows} logged steps")
+    with open(steps_path, "w", newline="") as f:
+        w = csv.writer(f)
+        keys = list(log)
+        w.writerow(keys + (["steer_assist", "assist_margin", "brake_assist"] if assists else []))
+        for i in range(rows):
+            row = [int(log[k][i]) if isinstance(log[k][i], (bool, np.bool_)) else log[k][i] for k in keys]
+            if assists:
+                steer, margin, brake = assists[i]
+                row += [int(steer), margin, int(brake)]
+            w.writerow(row)
     with open(laps_path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["lap", "lap_time", "off_track_count", "clean"])
+        w.writerow(["lap", "lap_time", "off_track_count", "clean"] + (["assists"] if assists else []))
         for lap in env.lap_log:
-            w.writerow([lap["lap"], f"{lap['lap_time']:.3f}", lap["off_track_count"], int(lap["clean"])])
+            row = [lap["lap"], f"{lap['lap_time']:.3f}", lap["off_track_count"], int(lap["clean"])]
+            if assists:                      # steps driven during this lap: log "lap" == lap - 1
+                during = [assists[i] for i in range(rows) if log["lap"][i] == lap["lap"] - 1]
+                row.append(describe_assists(during or [assists[-1]]))
+            w.writerow(row)
     return steps_path
 
 
@@ -69,6 +107,7 @@ def main():
                        caption="RacingEnv - arrow keys to drive")
     teleop = KeyboardTeleop(p, track=env.track, steer_assist=not args.no_assist)   # assists on
     obs, info = env.reset()
+    assists = [assist_state(teleop)]                 # one record per logged step
     attempt = 1
     action = teleop.action()
     prev_keys = pygame.key.get_pressed()
@@ -82,10 +121,11 @@ def main():
         pressed = lambda k: keys[k] and not prev_keys[k]           # key just went down
         if pressed(pygame.K_r):
             if args.log:
-                print("saved", save_attempt(env, args.log, attempt))
+                print("saved", save_attempt(env, args.log, attempt, assists))
                 attempt += 1
             obs, info = env.reset()
             teleop.reset()
+            assists = [assist_state(teleop)]
         if pressed(pygame.K_a):
             teleop.steer_assist = not teleop.steer_assist
         if pressed(pygame.K_b):
@@ -101,6 +141,7 @@ def main():
         # one 50 ms step: keys -> same command format as the controllers -> env.step
         action = teleop.action_from_pygame(info["vx"], s=info["s"])
         obs, reward, terminated, truncated, info = env.step(action)
+        assists.append(assist_state(teleop))
         if info["lap_completed"]:
             lap = env.lap_log[-1]
             print(f"lap {lap['lap']}: {lap['lap_time']:.2f} s"
@@ -116,7 +157,7 @@ def main():
         time.sleep(max(0.0, next_frame - time.perf_counter()))
         next_frame = max(next_frame, time.perf_counter())
     if args.log:
-        print("saved", save_attempt(env, args.log, attempt))
+        print("saved", save_attempt(env, args.log, attempt, assists))
     view.close()
 
 

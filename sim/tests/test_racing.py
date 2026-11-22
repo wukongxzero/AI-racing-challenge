@@ -672,19 +672,25 @@ def test_lap_timer():
 
 
 def test_keyboard_attempt_log(tmp_path=None):
-    """drive_keyboard --log saves every step and one row per lap, like the controllers."""
+    """drive_keyboard --log saves every step and one row per lap, like the controllers, plus
+    the human's assist settings at every step and per lap (needed to report results)."""
     from sim.examples.drive_keyboard import save_attempt
     folder = str(tmp_path or os.path.dirname(__file__))
     env = RacingEnv(max_laps=1, time_limit=60)
     _, info = env.reset()
-    _drive(env, info, 3000)
-    steps = save_attempt(env, os.path.join(folder, "_human.csv"), 1)
+    info, _, _ = _drive(env, info, 3000)
+    rows = env.steps + 1
+    assists = [(True, 1.4, True)] * (rows // 2) + [(True, 1.4, False)] * (rows - rows // 2)
+    steps = save_attempt(env, os.path.join(folder, "_human.csv"), 1, assists)
     laps = os.path.join(folder, "_human_1_laps.csv")
     with open(laps) as f:
-        rows = f.read().strip().splitlines()
-    assert rows[0] == "lap,lap_time,off_track_count,clean" and len(rows) == 2
+        lines = f.read().strip().splitlines()
+    assert lines[0] == "lap,lap_time,off_track_count,clean,assists" and len(lines) == 2
+    assert lines[1].endswith("changed: steer x1.4 + brake / steer x1.4")   # toggled mid-lap
     with open(steps) as f:
-        assert f.readline().startswith("t,x,y,psi")
+        header = f.readline().strip().split(",")
+        assert header[:4] == ["t", "x", "y", "psi"] and header[-3:] == ["steer_assist", "assist_margin", "brake_assist"]
+        assert sum(1 for _ in f) == rows
     if tmp_path is None:
         os.remove(steps)
         os.remove(laps)
