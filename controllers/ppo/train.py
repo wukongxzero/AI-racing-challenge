@@ -120,6 +120,8 @@ def main():
     ap.add_argument("--eval-every", type=int, default=50_000, help="timesteps between evaluations")
     ap.add_argument("--checkpoint-every", type=int, default=100_000)
     ap.add_argument("--resume", default=None, help="run folder to continue from (uses final/)")
+    ap.add_argument("--mu-range", type=float, nargs=2, default=None,
+                    help="min and max friction scale sampled per training episode (e.g. 0.6 1.0)")
     args = ap.parse_args()
 
     reward = RewardConfig.preset(args.reward)
@@ -135,7 +137,7 @@ def main():
         json.dump(config, f, indent=2)
 
     env_kwargs = dict(track=args.track, car=args.car, reward=reward, mu_scale=args.mu_scale)
-    venv = build_vec_env(args.n_envs, args.seed, train=True, **env_kwargs)
+    venv = build_vec_env(args.n_envs, args.seed, train=True, **env_kwargs, mu_range=args.mu_range)
     # Evaluation: start line at rest, same termination rules as training, frozen stats.
     eval_env = build_vec_env(1, args.seed + 10_000, subproc=False, train=True,
                              start={"s0": 0.0, "e_c0": 0.0, "e_psi0": 0.0, "v0": 0.0}, **env_kwargs)

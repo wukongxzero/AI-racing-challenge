@@ -76,7 +76,7 @@ class PPORacingWrapper(gym.Wrapper):
     """
 
     def __init__(self, env: RacingEnv, reward: RewardConfig | None = None, start=None,
-                 early_termination=True, stall_steps=40, stall_progress=0.3):
+                 early_termination=True, stall_steps=40, stall_progress=0.3, mu_range=None):
         super().__init__(env)
         if tuple(env.unwrapped.lookahead) != LOOKAHEAD:
             raise ValueError(f"RacingEnv must use lookahead={LOOKAHEAD}")
@@ -85,6 +85,7 @@ class PPORacingWrapper(gym.Wrapper):
         self.early_termination = early_termination
         self.stall_steps = stall_steps
         self.stall_progress = stall_progress
+        self.mu_range = mu_range
 
         # Finite bounds taken from the env's own limits (VecNormalize does the scaling).
         base = env.unwrapped.observation_space
@@ -103,11 +104,19 @@ class PPORacingWrapper(gym.Wrapper):
         self.action_space = env.action_space
 
     def _reset_options(self, options):
+        # During evaluation, options is passed explicitly, so we return it untouched
         if options is not None:
             return options
+
         opt = dict(self.start)
         if opt.get("s0") is None:
             opt["s0"] = (0.0, self.env.unwrapped.track.length)
+
+        # Friction randomization: a new mu_scale every training episode
+        if self.mu_range is not None:
+            low, high = self.mu_range
+            opt["mu_scale"] = float(self.np_random.uniform(low, high))
+
         return opt
 
     def reset(self, *, seed=None, options=None):
@@ -159,7 +168,7 @@ class PPORacingWrapper(gym.Wrapper):
 
 
 def make_env(track="training", car="numpy", reward="full", train=True, mu_scale=1.0,
-             time_limit=50.0, render_mode=None, max_laps=None, start=None):
+             mu_range=None, time_limit=50.0, render_mode=None, max_laps=None, start=None):
     """One PPO env.
 
     train=True:  off track ends the episode, random starts, stall/reverse termination.
@@ -172,4 +181,5 @@ def make_env(track="training", car="numpy", reward="full", train=True, mu_scale=
                     mu_scale=mu_scale, log=not train, render_mode=render_mode)
     if start is None:
         start = TRAIN_START if train else RACE_START
-    return PPORacingWrapper(env, reward_cfg, start=start, early_termination=train)
+    return PPORacingWrapper(env, reward=reward_cfg, start=start, early_termination=train,
+                            mu_range=mu_range if train else None)
