@@ -56,6 +56,8 @@ Tuning result (`tune.py`, 60 settings): a shorter lookahead is faster but less s
 | hidden (95 m) | 100 % | 19.27 s | 0 | 0.49 m |
 | training | 70 % | 27.56 s | 0 | 0.45 m |
 | hidden | 70 % | 22.21 s | 0 | 0.54 m |
+| training | 70 %, **not told** | 1 lap in 170.19 s | 34 | – |
+| hidden | 70 %, **not told** | 1 lap in 116.01 s | 32 | – |
 
 Off track starts at |e_c| > 0.595 m. Known weaknesses, which are useful for the comparison:
 
@@ -63,5 +65,7 @@ Off track starts at |e_c| > 0.595 m. Known weaknesses, which are useful for the 
 - It slows below its target in corners, because the front tire's side force drags the car.
 - It knows nothing about tire slip beyond the understeer factor.
 
-Note: `env.car_params` reflects `mu_scale`, so in the 70 % test Pure Pursuit *knows* the grip
-is lower and plans slower speeds.
+"Told" = the controller reads the real grip from `env.car_params` and plans slower speeds.
+"Not told" (`--controllers-assume-mu 1.0`) = it plans for normal grip on a slippery road,
+the same position PPO is in (PPO never reads `car_params`). Pure Pursuit then arrives at
+every corner too fast and slides off: its speed plan is only as good as its grip estimate.
