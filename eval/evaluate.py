@@ -31,9 +31,17 @@ def make_pure_pursuit(env):
     return policy
 
 
-# TODO (Berinay): def make_mpcc(env): build the MPCC and return lambda obs, info: ...
+def make_mpcc(env, preset="RACE"):
+    from controllers.mpc.driver import MPCCDriver
+    from controllers.mpc import driver as d
+    from controllers.mpc.dynamic_mpcc import DynamicConfig
+    return MPCCDriver(env, DynamicConfig(**getattr(d, preset)))   # callable(obs, info), has reset()
+
+
 # TODO (Pavan):   def make_ppo(env): model = PPO.load(...); return lambda obs, info: model.predict(obs, deterministic=True)[0]
-DRIVERS = {"pure_pursuit": ("Pure Pursuit", make_pure_pursuit)}
+DRIVERS = {"pure_pursuit": ("Pure Pursuit", make_pure_pursuit),
+           "mpcc": ("MPCC", make_mpcc),
+           "mpcc_robust": ("MPCC robust", lambda env: make_mpcc(env, "ROBUST"))}
 
 
 def main():
