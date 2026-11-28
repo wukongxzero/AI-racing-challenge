@@ -1,5 +1,5 @@
 # Runs the environment tests on every pull request and every push to main.
-# A red X on a pull request means something in sim/ broke; click "Details" to see which test.
+# A red X on a pull request means something in sim/ (or Pure Pursuit / eval) broke; click "Details" to see which test.
 name: tests
 
 on:
@@ -28,3 +28,5 @@ jobs:
         run: pip install -e . casadi pygame-ce "imageio[ffmpeg]"
       - name: Run sim tests
         run: python sim/tests/test_racing.py
+      - name: Run Pure Pursuit + eval tests
+        run: python -m controllers.pure_pursuit.test_pure_pursuit

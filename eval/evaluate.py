@@ -1,15 +1,19 @@
 """Run drivers on the tracks, save logs + metrics, print the lap-time table, make plots.
 
 From the repository root:
-    python -m eval.evaluate                                  # Pure Pursuit, both tracks, 3 laps
+    python -m eval.evaluate                                  # all drivers, both tracks, 3 laps
+    python -m eval.evaluate --drivers mpcc --tracks training --laps 2   # just MPCC
+    python -m eval.evaluate --drivers mpcc --mpcc-speed 6    # MPCC with another speed cap
     python -m eval.evaluate --drivers pure_pursuit --tracks training --laps 5
-    python -m eval.evaluate --mu-scale 0.7                   # robustness: 30 % less grip
+    python -m eval.evaluate --mu-scale 0.7                   # robustness: 30 % less grip, controllers told
+    python -m eval.evaluate --mu-scale 0.7 --controllers-assume-mu 1.0   # ... controllers NOT told
     python -m eval.evaluate --plots-only                     # re-plot from saved results/
 
-Outputs go to results/ (git-ignored): <driver>_<track>.csv / .json, table.md, *.png.
+Outputs go to results/ (git-ignored; --mu-scale runs go to results/mu<value>/,
+uninformed runs to results/mu<value>/assume_mu<value>/): <driver>_<track>.csv / .json, table.md, *.png.
 
 Adding a driver = add a function to DRIVERS that takes the env and returns
-policy(obs, info) -> [throttle, steering]. MPCC and PPO slots are marked below.
+policy(obs, info) -> [throttle, steering] (adapters live in eval/drivers.py). The PPO slot is marked below.
 """
 from __future__ import annotations
 
@@ -23,17 +27,19 @@ from eval.metrics import run_episode, save_result, load_result, format_table, sl
 from eval import plots
 
 
-def make_pure_pursuit(env):
-    from controllers.pure_pursuit.pure_pursuit import PurePursuit
-    pp = PurePursuit(env)
-    policy = lambda obs, info: pp(info)  # noqa: E731
-    policy.controller = pp
-    return policy
+def make_pure_pursuit(env, args):
+    from eval.drivers import PurePursuitDriver
+    return PurePursuitDriver(env)
 
 
-# TODO (Berinay): def make_mpcc(env): build the MPCC and return lambda obs, info: ...
-# TODO (Pavan):   def make_ppo(env): model = PPO.load(...); return lambda obs, info: model.predict(obs, deterministic=True)[0]
-DRIVERS = {"pure_pursuit": ("Pure Pursuit", make_pure_pursuit)}
+def make_mpcc(env, args):
+    from eval.drivers import MPCCDriver
+    return MPCCDriver(env, speed=args.mpcc_speed, horizon=args.mpcc_horizon, substeps=args.mpcc_substeps)
+
+
+# TODO (Pavan): def make_ppo(env, args): model = PPO.load(...); return lambda obs, info: model.predict(obs, deterministic=True)[0]
+DRIVERS = {"pure_pursuit": ("Pure Pursuit", make_pure_pursuit),
+           "mpcc": ("MPCC", make_mpcc)}
 
 
 def main():
@@ -46,9 +52,16 @@ def main():
     ap.add_argument("--car", default="numpy")
     ap.add_argument("--out", default="results")
     ap.add_argument("--plots-only", action="store_true")
+    ap.add_argument("--controllers-assume-mu", type=float, default=None,
+                    help="uninformed robustness test: controllers plan with this grip (e.g. 1.0) "
+                         "while the road has --mu-scale. Default: controllers are told the real grip.")
+    ap.add_argument("--mpcc-speed", type=float, default=8.0, help="MPCC speed cap (m/s)")
+    ap.add_argument("--mpcc-horizon", type=int, default=6)
+    ap.add_argument("--mpcc-substeps", type=int, default=2)
     args = ap.parse_args()
-    tag = "" if args.mu_scale == 1.0 else f"_mu{args.mu_scale:g}"
-    out = args.out + tag
+    out = args.out if args.mu_scale == 1.0 else os.path.join(args.out, f"mu{args.mu_scale:g}")
+    if args.controllers_assume_mu is not None:
+        out = os.path.join(out, f"assume_mu{args.controllers_assume_mu:g}")
 
     results = []
     if args.plots_only:
@@ -60,12 +73,20 @@ def main():
                 name, make = DRIVERS[key]
                 env = RacingEnv(car=args.car, track=track, off_track="grass", max_laps=args.laps,
                                 time_limit=args.time_limit, mu_scale=args.mu_scale)
-                policy = make(env)
+                print(f"running {name} on {track} ...", flush=True)
+                plan_env = env
+                if args.controllers_assume_mu is not None:
+                    from eval.drivers import AssumedGrip
+                    plan_env = AssumedGrip(env, args.controllers_assume_mu, car=args.car)
+                policy = make(plan_env, args)
                 r = run_episode(env, policy, name=name, seed=0)
                 r["controller"] = getattr(policy, "controller", None)
+                r["metrics"].update(getattr(policy, "stats", {}))
+                r["metrics"].update({f"setting_{k}": v for k, v in getattr(policy, "settings", {}).items()})
                 save_result(r, out)
                 laps = ", ".join(f"{t:.2f}" for t in r["metrics"]["lap_times"])
-                print(f"{name:>14} on {track:<8}: laps [{laps}] s, off-track {r['metrics']['off_track_events']}")
+                extra = "".join(f", {k} {v}" for k, v in getattr(policy, "stats", {}).items())
+                print(f"{name:>14} on {track:<8}: laps [{laps}] s, off-track {r['metrics']['off_track_events']}{extra}")
                 results.append(r)
 
     table = format_table(results)
